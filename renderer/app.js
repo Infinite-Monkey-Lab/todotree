@@ -1,1073 +1,974 @@
-let zones = [
-  { id: 'goals', name: '目标', order: 0 },
-  { id: 'todo', name: '待完成', order: 1 },
-  { id: 'done', name: '已完成', order: 2 },
-  { id: 'abandoned', name: '放弃', order: 3 },
-];
-
-const STATUS_CYCLE = ['pending', 'done', 'urgent', 'abandoned'];
-const AUTO_MOVE_DELAY = 60000;
-
-let treeData = [];
-let zonesContainer;
-let newTodoInput;
-let ddlInput;
-let zoneSelect;
-let parentSelect;
-let statsEl;
-let filePathBar;
-let pinned = true;
-let headerEl;
-let pinBtn;
-let isDragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let moveTimers = {};
-let undoStack = [];
-const MAX_UNDO = 20;
-let undoBtn;
-let persistedHeights = {};
-let lastSyncMtime = null;
-let savingInProgress = false;
-
-function pushUndo() {
-  undoStack.push(JSON.parse(JSON.stringify(treeData)));
-  if (undoStack.length > MAX_UNDO) undoStack.shift();
-  if (undoBtn) undoBtn.disabled = false;
-}
-
-async function undo() {
-  if (undoStack.length === 0) return;
-  treeData = undoStack.pop();
-  if (undoBtn) undoBtn.disabled = undoStack.length === 0;
-  for (const id of Object.keys(moveTimers)) { clearTimeout(moveTimers[id]); delete moveTimers[id]; }
-  await saveToFile();
-  render();
-}
-
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
-}
-
-function getChildren(parentId) {
-  return treeData.filter(i => i.parentId === parentId && !i.detachedParentId).sort((a, b) => (a.order || 0) - (b.order || 0));
-}
-
-function getDescendantIds(parentId) {
-  const ids = [];
-  for (const child of getChildren(parentId)) {
-    ids.push(child.id, ...getDescendantIds(child.id));
-  }
-  return ids;
-}
-
-function getZoneItems(zoneId) {
-  return treeData.filter(i => i.zone === zoneId).sort((a, b) => (a.order || 0) - (b.order || 0));
-}
-
-function parseMarkdown(text) {
-  const lines = text.split(/\r?\n/);
-  const items = [];
-  let rootId = null;
-  let currentZone = 'todo';
-  let order = 0;
-
-  for (const rawLine of lines) {
-    const line = rawLine.trimEnd();
-    if (!line.trim()) continue;
-
-    if (/^# /.test(line)) {
-      rootId = '__root__';
-      order = 1;
-      continue;
-    }
-
-    if (/^## 待完成/.test(line)) { currentZone = 'todo'; continue; }
-    if (/^## 已完成/.test(line)) { currentZone = 'done'; continue; }
-    if (/^## 目标/.test(line)) { currentZone = 'goals'; continue; }
-    if (/^## 放弃/.test(line)) { currentZone = 'abandoned'; continue; }
-    if (/^## /.test(line)) { currentZone = 'todo'; continue; }
-
-    const indent = rawLine.match(/^(\s*)/)[1].length;
-    const trimmed = line.trim();
-    const match = trimmed.match(/^-\s*\[([^\]]*)\]\s+(.+)/);
-    if (!match) continue;
-
-    const statusChar = match[1].trim();
-    let ddl = null;
-    let taskText = match[2];
-    const ddlMatch = taskText.match(/\s*\|\s*ddl:\s*(\d{4}-\d{2}-\d{2})\s*$/);
-    if (ddlMatch) { ddl = ddlMatch[1]; taskText = taskText.replace(/\s*\|\s*ddl:\s*\d{4}-\d{2}-\d{2}\s*$/, ''); }
-
-    const statusMap = { 'x': 'done', '!': 'urgent', '>': 'goal', '~': 'abandoned', '': 'pending' };
-    const status = statusMap[statusChar] || 'pending';
-
-    const depth = Math.min(Math.floor(indent / 2), 5);
-    let parentId = null;
-    if (depth > 0) {
-      if (depth === 1) {
-        parentId = items.filter(i => i.zone === currentZone && !i.parentId && i.id !== rootId).pop()?.id || null;
-      } else {
-        for (let i = items.length - 1; i >= 0; i--) {
-          if (items[i].zone === currentZone) {
-            const itemDepth = Math.min(Math.floor((items[i].indent || 0) / 2), 5);
-            if (itemDepth === depth - 1) { parentId = items[i].id; break; }
-          }
-        }
-      }
-    }
-
-    items.push({
-      id: generateId(), text: taskText, status, zone: currentZone,
-      ddl, parentId, collapsed: false, order: order++, indent,
-      statusChangedAt: null, detachedParentId: null, isCopy: false, urgentOriginalOrder: null,
-    });
-  }
-
-  return items;
-}
-
-function exportMarkdown() {
-  const lines = ['# TodoTree', ''];
-
-  for (const zone of zones) {
-    lines.push(`## ${zone.name}`);
-    lines.push('');
-
-    const zoneItems = getZoneItems(zone.id);
-    const topLevelItems = zoneItems.filter(i => !i.parentId && !i.isCopy);
-
-    function writeItems(items, depth = 0) {
-      for (const item of items) {
-        if (item.isCopy) continue;
-        const prefix = '  '.repeat(depth);
-        const statusMap = { pending: ' ', done: 'x', urgent: '!', goal: '>', abandoned: '~' };
-        const s = statusMap[item.status] || ' ';
-        let text = `${prefix}- [${s}] ${item.text}`;
-        if (item.ddl) text += ` | ddl:${item.ddl}`;
-        lines.push(text);
-
-        const children = zoneItems.filter(i => i.parentId === item.id && !i.isCopy);
-        if (children.length > 0) writeItems(children, depth + 1);
-      }
-    }
-
-    writeItems(topLevelItems);
-    lines.push('');
-  }
-
-  return lines.join('\n');
-}
-
-async function saveToFile() {
-  savingInProgress = true;
+"use strict";
+const M = window.TaskModel;
+const $ = (id) => document.getElementById(id);
+const api = window.todoAPI;
+const statusNames = {
+  pending: "待完成",
+  done: "已完成",
+  urgent: "紧急",
+  goal: "目标",
+  abandoned: "放弃",
+};
+let items = [],
+  blocks,
+  filePath = "",
+  revision = null,
+  ready = false,
+  pinned = true;
+let editVersion = 0,
+  savedVersion = 0,
+  saving = null,
+  blocked = false,
+  filter = "all",
+  query = "";
+let undoStack = [],
+  dragging = false,
+  switching = false;
+const pref = (key, fallback) => {
   try {
-    const diskMtime = await window.todoAPI.getFileMtime();
-    if (lastSyncMtime !== null && diskMtime !== null && diskMtime !== lastSyncMtime) {
-      await window.todoAPI.backupTodoFile();
-    }
-    await window.todoAPI.save(exportMarkdown());
-    lastSyncMtime = await window.todoAPI.getFileMtime();
-  } finally {
-    savingInProgress = false;
+    return JSON.parse(localStorage.getItem("todotree." + key)) ?? fallback;
+  } catch (_) {
+    return fallback;
   }
+};
+const keep = (key, value) => {
+  try {
+    localStorage.setItem("todotree." + key, JSON.stringify(value));
+  } catch (_) {}
+};
+let zoneOrder = pref(
+  "zoneOrder",
+  M.zones.map((z) => z.id),
+);
+if (
+  !Array.isArray(zoneOrder) ||
+  zoneOrder.length !== 4 ||
+  new Set(zoneOrder).size !== 4 ||
+  zoneOrder.some((id) => !M.zones.some((z) => z.id === id))
+)
+  zoneOrder = M.zones.map((z) => z.id);
+let closedZones = pref("closedZones", ["abandoned"]),
+  heights = {};
+if (!Array.isArray(closedZones)) closedZones = [];
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const dirty = () => editVersion !== savedVersion;
+const ordered = (a, b) =>
+  Number(b.status === "urgent") - Number(a.status === "urgent") ||
+  a.order - b.order;
+const children = (id) => items.filter((i) => i.parentId === id).sort(ordered);
+const active = (item) => !["done", "abandoned", "goal"].includes(item.status);
+function element(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined) el.textContent = text;
+  return el;
 }
-
-function render() {
-  const savedHeights = {};
-  const savedScrollTops = {};
-  const containerScrollTop = zonesContainer.scrollTop;
-  document.querySelectorAll('.zone-body').forEach(body => {
-    const section = body.closest('.zone-section');
-    const zoneId = section?.dataset?.zoneId;
-    if (zoneId && body.style.height) savedHeights[zoneId] = body.style.height;
-    if (zoneId) savedScrollTops[zoneId] = body.scrollTop;
-  });
-
-  zonesContainer.innerHTML = '';
-  let totalCount = 0;
-
-  for (const zone of zones) {
-    const zoneItems = getZoneItems(zone.id);
-    totalCount += zoneItems.filter(i => !i.isCopy).length;
-
-    const section = document.createElement('div');
-    section.className = 'zone-section';
-    section.dataset.zoneId = zone.id;
-
-    const header = document.createElement('div');
-    header.className = 'zone-header';
-    header.draggable = true;
-    header.innerHTML = `
-      <span class="zone-drag-handle">⠿</span>
-      <span class="zone-toggle">▼</span>
-      <span class="zone-name">${zone.name}</span>
-      <span class="zone-count">${zoneItems.filter(i => !i.isCopy).length} 项</span>
-    `;
-
-    header.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('text/zone', zone.id);
-      e.dataTransfer.effectAllowed = 'move';
-      header.classList.add('dragging');
-    });
-    header.addEventListener('dragend', () => { header.classList.remove('dragging'); });
-    header.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; header.classList.add('drag-over'); });
-    header.addEventListener('dragleave', () => { header.classList.remove('drag-over'); });
-    header.addEventListener('drop', e => {
-      e.preventDefault();
-      header.classList.remove('drag-over');
-      const fromZoneId = e.dataTransfer.getData('text/zone');
-      if (fromZoneId && fromZoneId !== zone.id) {
-        const fromIdx = zones.findIndex(z => z.id === fromZoneId);
-        const toIdx = zones.findIndex(z => z.id === zone.id);
-        if (fromIdx >= 0 && toIdx >= 0) {
-          const [moved] = zones.splice(fromIdx, 1);
-          zones.splice(toIdx, 0, moved);
-          render();
-        }
-      }
-    });
-
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'zone-clear';
-    clearBtn.textContent = '清除';
-    clearBtn.addEventListener('click', e => { e.stopPropagation(); clearZone(zone.id); });
-    header.appendChild(clearBtn);
-
-    const body = document.createElement('div');
-    body.className = 'zone-body';
-
-    header.addEventListener('click', () => {
-      body.style.display = body.style.display === 'none' ? '' : 'none';
-      header.querySelector('.zone-toggle').textContent = body.style.display === 'none' ? '▶' : '▼';
-    });
-
-    if (zoneItems.length === 0) {
-      body.innerHTML = '<div class="empty-state">暂无</div>';
-    } else {
-      renderZoneItems(zone.id, zoneItems, body);
-    }
-
-    section.appendChild(header);
-    section.appendChild(body);
-
-    if (savedHeights[zone.id]) body.style.height = savedHeights[zone.id];
-    else if (persistedHeights[zone.id]) body.style.height = persistedHeights[zone.id];
-
-    if (zone !== zones[zones.length - 1]) {
-      const handle = document.createElement('div');
-      handle.className = 'zone-resize-handle';
-      setupResizeHandle(handle, body, zone.id);
-      section.appendChild(handle);
-    }
-
-    zonesContainer.appendChild(section);
-
-    if (savedScrollTops[zone.id]) {
-      requestAnimationFrame(() => {
-        body.scrollTop = savedScrollTops[zone.id];
-      });
-    }
-  }
-
-  statsEl.textContent = `共 ${totalCount} 项`;
-  updateParentSelect();
-
-  requestAnimationFrame(() => {
-    fitLastZone();
-    zonesContainer.scrollTop = containerScrollTop;
-  });
+function button(text, label, action, className = "") {
+  const el = element("button", className, text);
+  el.type = "button";
+  el.title = label;
+  el.setAttribute("aria-label", label);
+  el.addEventListener("click", action);
+  return el;
 }
-
-// 最后一个分区(放弃)底线钉在窗口下边缘：多余空间由它吸收，溢出由它收缩，最小 40px
-function fitLastZone() {
-  const sections = zonesContainer.querySelectorAll('.zone-section');
-  if (sections.length === 0) return;
-  let total = 0;
-  sections.forEach(s => { total += s.offsetHeight; });
-  const last = sections[sections.length - 1];
-  const lastBody = last.querySelector('.zone-body');
-  if (!lastBody) return;
-  const diff = zonesContainer.clientHeight - total;
-  const newBodyH = Math.max(40, lastBody.offsetHeight + diff);
-  lastBody.style.height = newBodyH + 'px';
+function state(text, type = "saved") {
+  $("save-state").textContent = text;
+  $("save-state").dataset.state = type;
 }
-
-function renderZoneItems(zoneId, zoneItems, container) {
-  const phantomIds = new Set();
-  const phantomMap = {};
-
-  const nonPhantom = [];
-
-  for (const item of zoneItems) {
-    if (item.isCopy) continue;
-
-    let displayParentId = item.parentId;
-
-    if (displayParentId) {
-      const parent = treeData.find(i => i.id === displayParentId);
-      if (parent && parent.zone !== zoneId) {
-        const phantomKey = displayParentId;
-        phantomIds.add(item.id);
-        if (!phantomMap[phantomKey]) phantomMap[phantomKey] = { parent, items: [] };
-        phantomMap[phantomKey].items.push(item);
-        continue;
-      }
-    }
-
-    nonPhantom.push(item);
-  }
-
-  const topLevel = nonPhantom.filter(i => !i.parentId);
-
-  renderItems(zoneItems, topLevel, 0, container);
-
-  for (const key of Object.keys(phantomMap)) {
-    const group = phantomMap[key];
-
-    const phantomDiv = document.createElement('div');
-    phantomDiv.className = 'tree-node phantom';
-    phantomDiv.innerHTML = `<span class="phantom-icon">↳</span><span class="phantom-text">${group.parent.text}</span>`;
-    container.appendChild(phantomDiv);
-
-    group.items.sort((a, b) => (a.order || 0) - (b.order || 0));
-    for (const item of group.items) {
-      renderSingleItem(zoneItems, item, 1, container);
-    }
-  }
+function notice(text, conflict = false) {
+  $("notice").hidden = false;
+  $("notice-text").textContent = text;
+  $("retry-btn").hidden = conflict;
+  $("copy-btn").hidden = !ready;
+  $("load-btn").textContent = conflict ? "载入外部版本" : "重新读取";
 }
-
-function renderSingleItem(allZoneItems, item, depth, container) {
-  const hasChildren = allZoneItems.some(c => c.parentId === item.id);
-  const isCollapsed = item.collapsed || false;
-  const indentClass = depth > 5 ? 'indent-5' : `indent-${depth}`;
-
-  const nodeDiv = document.createElement('div');
-  nodeDiv.className = `tree-node ${indentClass}`;
-  nodeDiv.dataset.id = item.id;
-  nodeDiv.draggable = true;
-
-  nodeDiv.addEventListener('dragstart', e => {
-    e.dataTransfer.setData('text/plain', item.id);
-    e.dataTransfer.effectAllowed = 'move';
-    nodeDiv.classList.add('dragging');
-  });
-  nodeDiv.addEventListener('dragend', () => { nodeDiv.classList.remove('dragging'); });
-  nodeDiv.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; nodeDiv.classList.add('drag-over'); });
-  nodeDiv.addEventListener('dragleave', () => { nodeDiv.classList.remove('drag-over'); });
-  nodeDiv.addEventListener('drop', e => {
-    e.preventDefault();
-    nodeDiv.classList.remove('drag-over');
-    const fromId = e.dataTransfer.getData('text/plain');
-    if (fromId && fromId !== item.id) reorderItems(fromId, item.id);
-  });
-
-  const numSpan = document.createElement('span');
-  numSpan.className = 'item-num';
-  numSpan.textContent = getSiblingIndex(item);
-  const zoneColors = { goals: '#89b4fa', todo: '#c9a84c', done: 'rgba(180,200,180,0.7)', abandoned: 'rgba(160,160,160,0.55)' };
-  numSpan.style.color = zoneColors[item.zone] || '#c9a84c';
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.className = `toggle-btn${hasChildren ? '' : ' empty'}`;
-  toggleBtn.textContent = isCollapsed ? '▶' : '▼';
-  toggleBtn.addEventListener('click', e => { e.stopPropagation(); toggleCollapse(item.id); });
-
-  const dot = document.createElement('div');
-  dot.className = `status-dot ${item.status}`;
-  dot.title = cycleTooltip(item.status);
-  dot.addEventListener('click', e => { e.stopPropagation(); cycleStatus(item.id); });
-
-  const textSpan = document.createElement('span');
-  textSpan.className = `node-text ${item.status}`;
-  textSpan.textContent = item.text;
-
-  const ddlSpan = document.createElement('span');
-  if (item.ddl) {
-    ddlSpan.className = 'node-ddl';
-    const due = new Date(item.ddl);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    if (due < today) ddlSpan.classList.add('overdue');
-    ddlSpan.textContent = item.ddl;
-  }
-
-  const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'btn-delete';
-  deleteBtn.textContent = '\u00D7';
-  deleteBtn.addEventListener('click', e => { e.stopPropagation(); deleteItem(item.id); });
-
-  nodeDiv.appendChild(dot);
-  nodeDiv.appendChild(numSpan);
-  nodeDiv.appendChild(toggleBtn);
-  nodeDiv.appendChild(textSpan);
-  if (item.ddl) nodeDiv.appendChild(ddlSpan);
-  nodeDiv.appendChild(deleteBtn);
-  nodeDiv.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); showContextMenu(e, item.id); return false; };
-  container.appendChild(nodeDiv);
-
-  if (hasChildren && !isCollapsed) {
-    const children = allZoneItems.filter(c => c.parentId === item.id);
-    for (const child of children) {
-      renderSingleItem(allZoneItems, child, depth + 1, container);
-    }
-  }
+function hideNotice() {
+  $("notice").hidden = true;
 }
-
-function renderItems(allZoneItems, items, depth, container) {
-  for (const item of items) {
-    renderSingleItem(allZoneItems, item, depth, container);
-  }
+function serialize() {
+  return M.serialize(items, blocks);
 }
-
-function setupResizeHandle(handle, body, zoneId) {
-  let startY, startHeight, otherBody, otherStartHeight;
-  const zoneIdx = zones.findIndex(z => z.id === zoneId);
-
-  handle.addEventListener('mousedown', e => {
-    e.preventDefault();
-    startY = e.clientY;
-    startHeight = body.offsetHeight;
-
-    otherBody = null;
-    otherStartHeight = 0;
-    if (zoneIdx < zones.length - 1) {
-      const nextZoneId = zones[zoneIdx + 1].id;
-      const nextBody = document.querySelector(`.zone-section[data-zone-id="${nextZoneId}"] .zone-body`);
-      if (nextBody) {
-        otherBody = nextBody;
-        otherStartHeight = nextBody.offsetHeight;
-      }
-    }
-
-    document.addEventListener('mousemove', onResize);
-    document.addEventListener('mouseup', onResizeEnd);
-  });
-
-  function onResize(e) {
-    let delta = e.clientY - startY;
-    let newH = Math.max(40, startHeight + delta);
-    let otherH = otherBody ? Math.max(40, otherStartHeight - delta) : 0;
-
-    if (otherBody && otherH <= 40 && delta > 0) {
-      delta = otherStartHeight - 40;
-      newH = startHeight + delta;
-      otherH = 40;
-    }
-    if (newH <= 40 && delta < 0 && otherBody) {
-      delta = 40 - startHeight;
-      newH = 40;
-      otherH = otherStartHeight - delta;
-    }
-
-    body.style.height = Math.max(40, newH) + 'px';
-    if (otherBody) otherBody.style.height = Math.max(40, otherH) + 'px';
-  }
-
-  function onResizeEnd() {
-    document.removeEventListener('mousemove', onResize);
-    document.removeEventListener('mouseup', onResizeEnd);
-    persistZoneHeights();
-    fitLastZone();
-  }
-}
-
-async function persistZoneHeights() {
-  const heights = {};
-  document.querySelectorAll('.zone-body').forEach(body => {
-    const section = body.closest('.zone-section');
-    const zoneId = section?.dataset?.zoneId;
-    if (zoneId && body.style.height) heights[zoneId] = body.style.height;
-  });
-  persistedHeights = heights;
-  await window.todoAPI.saveZoneHeights(heights);
-}
-
-async function reorderItems(fromId, toId) {
-  const fromItem = treeData.find(i => i.id === fromId);
-  const toItem = treeData.find(i => i.id === toId);
-  if (!fromItem || !toItem || fromItem.parentId !== toItem.parentId || fromItem.zone !== toItem.zone || fromItem.isCopy || toItem.isCopy) return;
-
-  pushUndo();
-
-  const siblings = treeData.filter(i => i.parentId === fromItem.parentId && i.zone === fromItem.zone && !i.isCopy);
-  const fromIdx = siblings.indexOf(fromItem);
-  const toIdx = siblings.indexOf(toItem);
-  siblings.splice(fromIdx, 1);
-  siblings.splice(toIdx, 0, fromItem);
-  siblings.forEach((s, i) => { s.order = i + 1; });
-
-  await saveToFile();
+function mutate(action) {
+  if (!ready || switching) return;
+  undoStack.push(clone(items));
+  if (undoStack.length > 20) undoStack.shift();
+  action();
+  editVersion++;
   render();
+  void save();
 }
-
-function updateItemNumbers() {
-  for (const zone of zones) {
-    const zoneItems = treeData.filter(i => i.zone === zone.id);
-    const topLevel = zoneItems.filter(i => !i.parentId && !i.isCopy);
-    topLevel.forEach((item, idx) => { item.order = idx + 1; });
-    for (const parent of zoneItems.filter(i => !i.isCopy && zoneItems.some(c => c.parentId === i.id))) {
-      const children = zoneItems.filter(i => i.parentId === parent.id && !i.isCopy);
-      children.forEach((c, idx) => { c.order = idx + 1; });
+async function save() {
+  if (saving) return saving;
+  if (!ready || blocked || !dirty()) return;
+  saving = (async () => {
+    try {
+      while (dirty() && !blocked) {
+        const version = editVersion,
+          content = serialize();
+        state("正在保存…", "saving");
+        const result = await api.save({ content, revision, filePath });
+        if (!result.success) {
+          blocked = true;
+          state("更改未保存", "error");
+          notice(result.error || "保存失败，请重试", !!result.conflict);
+          break;
+        }
+        revision = result.revision;
+        savedVersion = version;
+      }
+      if (!dirty()) state(api.isPreview ? "演示 · 仅当前页面" : "已保存到本地");
+    } catch (error) {
+      blocked = true;
+      state("更改未保存", "error");
+      notice(error.message || "保存失败，请重试");
+    } finally {
+      saving = null;
     }
+  })();
+  return saving;
+}
+async function modal({
+  title,
+  description = "",
+  text = "",
+  date = "",
+  confirm = false,
+  submit = "保存",
+}) {
+  const dialog = $("task-dialog");
+  if (dialog.open) return null;
+  $("dialog-title").textContent = title;
+  $("dialog-description").textContent = description;
+  $("dialog-description").hidden = !description;
+  $("dialog-text-label").hidden = confirm;
+  $("dialog-date-label").hidden = confirm;
+  $("dialog-text").value = text;
+  $("dialog-date").value = date;
+  $("dialog-text").required = !confirm;
+  $("dialog-submit").textContent = submit;
+  await api.beginTransientEdit();
+  dialog.showModal();
+  (confirm ? $("dialog-cancel") : $("dialog-text")).focus();
+  if (!confirm) $("dialog-text").select();
+  return new Promise((resolve) => {
+    let result = null;
+    const finish = () => {
+      $("dialog-form").removeEventListener("submit", onSubmit);
+      $("dialog-cancel").removeEventListener("click", onCancel);
+      dialog.removeEventListener("close", finish);
+      resolve(result);
+    };
+    const onSubmit = (event) => {
+      event.preventDefault();
+      const value = $("dialog-text").value.trim(),
+        ddl = $("dialog-date").value;
+      if (!confirm && (!value || (ddl && !M.validDate(ddl)))) return;
+      result = confirm ? true : { text: value, ddl: ddl || null };
+      dialog.close();
+    };
+    const onCancel = () => dialog.close();
+    $("dialog-form").addEventListener("submit", onSubmit);
+    $("dialog-cancel").addEventListener("click", onCancel);
+    dialog.addEventListener("close", finish);
+  });
+}
+async function allowDiscard(title) {
+  await save();
+  if (!dirty() && !$("new-todo-input").value.trim()) return true;
+  return !!(await modal({
+    title,
+    description:
+      "还有未保存的更改或正在输入的任务。继续后将丢弃这些内容；也可以取消并先保存副本。",
+    confirm: true,
+    submit: "继续",
+  }));
+}
+function acceptLoaded(result) {
+  if (!result?.success) {
+    state("读取失败", "error");
+    notice(result?.error || "无法读取文件");
+    return false;
+  }
+  const parsed = M.parse(result.content);
+  items = parsed.items;
+  blocks = parsed.blocks;
+  filePath = result.filePath;
+  revision = result.revision;
+  ready = true;
+  blocked = false;
+  editVersion = savedVersion = 0;
+  undoStack = [];
+  hideNotice();
+  $("file-path-bar").textContent = filePath.split(/[\\/]/).pop();
+  $("file-path-bar").title = filePath;
+  $("add-btn").disabled = false;
+  if (typeof result.pinned === "boolean") updatePin(result.pinned);
+  render();
+  state(
+    api.isPreview
+      ? "演示 · 仅当前页面"
+      : revision === null
+        ? "添加任务后创建文件"
+        : "已同步本地文件",
+  );
+  return true;
+}
+async function reload() {
+  if (!(await allowDiscard("载入文件版本？"))) return;
+  switching = true;
+  try {
+    acceptLoaded(await api.load());
+  } catch (e) {
+    notice(e.message);
+  } finally {
+    switching = false;
   }
 }
-
-function getSiblingIndex(item) {
-  if (!item) return '';
-  const siblings = treeData.filter(i => i.parentId === item.parentId && i.zone === item.zone && !i.isCopy);
-  const idx = siblings.indexOf(item);
-  if (idx < 0) return '';
-
-  if (!item.parentId) {
-    const cn = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十',
-                '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
-                '二十一', '二十二', '二十三', '二十四', '二十五', '二十六', '二十七', '二十八', '二十九', '三十'];
-    return cn[idx] + '、' || (idx + 1);
-  }
-  return idx + 1;
+function setStatus(item, status) {
+  if (item.status === status) return;
+  mutate(() => {
+    for (const target of [item, ...M.descendants(items, item.id)]) {
+      target.status = status;
+      target.statusChangedAt = Date.now();
+    }
+  });
 }
-
-function cycleTooltip(status) {
-  return { pending: '待完成 → 点击', done: '已完成 → 点击', urgent: '加急！→ 点击', goal: '目标', abandoned: '放弃 → 点击' }[status] || '';
+function cycleStatus(item) {
+  const cycle = ["pending", "done", "urgent", "abandoned"];
+  setStatus(item, cycle[(cycle.indexOf(item.status) + 1) % cycle.length]);
 }
-
-async function cycleStatus(id) {
-  const item = treeData.find(i => i.id === id);
-  if (!item || item.zone === 'goals' || item.isCopy) return;
-
-  pushUndo();
-
-  const idx = STATUS_CYCLE.indexOf(item.status);
-  const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
-
-  if (next === 'pending' || next === 'done' || next === 'abandoned' || next === 'urgent') {
-    cascadeStatus(id, next, true);
-  }
-
-  const parent = treeData.find(i => i.id === item.parentId);
-  if (next === 'urgent' && item.zone === 'todo') {
-    item.urgentOriginalOrder = item.order;
-    item.order = -Date.now();
-  }
-  if (item.status === 'urgent' && next !== 'urgent') {
-    item.order = item.urgentOriginalOrder || item.order;
-    item.urgentOriginalOrder = null;
-  }
-
-  item.status = next;
-  item.statusChangedAt = Date.now();
-
-  if (moveTimers[id]) { clearTimeout(moveTimers[id]); delete moveTimers[id]; }
-  if (next === 'done' || next === 'urgent' || next === 'abandoned') {
-    startAutoMove(id);
-  }
-
-  await saveToFile();
-  updateNodeStatus(id);
+async function editItem(item) {
+  const result = await modal({
+    title: "编辑任务",
+    text: item.text,
+    date: item.ddl || "",
+  });
+  if (result) mutate(() => Object.assign(item, result));
 }
-
-function updateNodeStatus(id) {
-  const item = treeData.find(i => i.id === id);
-  if (!item) return;
-
-  const node = document.querySelector(`.tree-node[data-id="${id}"]`);
-  if (!node) {
-    render();
+async function addChild(item) {
+  const result = await modal({
+    title: "添加子任务",
+    description: "属于：" + item.text,
+  });
+  if (result)
+    mutate(() => {
+      item.collapsed = false;
+      items.push({
+        id: M.id(),
+        ...result,
+        parentId: item.id,
+        zone: item.zone,
+        status: {
+          goals: "goal",
+          todo: "pending",
+          done: "done",
+          abandoned: "abandoned",
+        }[item.zone],
+        collapsed: false,
+        order: nextOrder(),
+        statusChangedAt: null,
+      });
+    });
+}
+function nextOrder() {
+  return items.reduce((max, item) => Math.max(max, item.order), -1) + 1;
+}
+function addItem() {
+  const text = $("new-todo-input").value.trim(),
+    ddl = $("ddl-input").value,
+    zone = $("zone-select").value,
+    parentId = $("parent-select").value || null;
+  if (!text || !ready) {
+    $("new-todo-input").focus();
     return;
   }
-
-  const dot = node.querySelector('.status-dot');
-  if (dot) {
-    dot.className = `status-dot ${item.status}`;
-    dot.title = cycleTooltip(item.status);
-  }
-
-  const textSpan = node.querySelector('.node-text');
-  if (textSpan) {
-    textSpan.className = `node-text ${item.status}`;
-  }
-}
-
-function cascadeStatus(parentId, status, fromParent = false) {
-  for (const child of getChildren(parentId)) {
-    const c = treeData.find(i => i.id === child.id);
-    if (c) {
-      c.status = status;
-      c.statusChangedAt = Date.now();
-      if (status === 'urgent' && c.parentId) {
-        c.urgentOriginalOrder = c.order;
-        c.order = -Date.now();
-      }
-      if (status !== 'urgent' && c.urgentOriginalOrder) {
-        c.order = c.urgentOriginalOrder;
-        c.urgentOriginalOrder = null;
-      }
-      cascadeStatus(c.id, status, false);
-    }
-  }
-}
-
-function startAutoMove(id) {
-  moveTimers[id] = setTimeout(async () => {
-    await processAutoMove(id);
-    delete moveTimers[id];
-  }, AUTO_MOVE_DELAY);
-}
-
-async function processAutoMove(id) {
-  const item = treeData.find(i => i.id === id);
-  if (!item) return;
-
-  const targetZone = { done: 'done', abandoned: 'abandoned', pending: 'todo' }[item.status];
-  if (targetZone && item.zone !== targetZone && item.zone !== 'goals') {
-    moveWithParentCopy(id, targetZone);
-  } else if (item.status === 'urgent') {
-    item.order = -Date.now();
-    await saveToFile();
-    render();
-  }
-}
-
-function moveWithParentCopy(id, newZone) {
-  const item = treeData.find(i => i.id === id);
-  if (!item) return;
-
-  const lookupParentId = item.parentId;
-
-  if (lookupParentId) {
-    const existingCopy = treeData.find(i => i.isCopy && i.originParentId === lookupParentId && i.zone === newZone);
-    if (!existingCopy) {
-      const parent = treeData.find(i => i.id === lookupParentId);
-      if (parent && parent.zone !== newZone) {
-        treeData.push({
-          id: generateId(), text: parent.text, status: parent.status, zone: newZone,
-          ddl: parent.ddl, parentId: null, collapsed: false, order: Date.now(),
-          statusChangedAt: null, detachedParentId: null, isCopy: true, originParentId: lookupParentId,
-        });
-      }
-    }
-  }
-
-  item.zone = newZone;
-  moveDescendants(item.id, newZone);
-  cleanupOrphanCopies(lookupParentId);
-
-  saveToFile().then(() => render());
-}
-
-function moveDescendants(id, newZone) {
-  for (const child of getChildren(id)) {
-    const c = treeData.find(i => i.id === child.id);
-    if (c) {
-      c.zone = newZone;
-      moveDescendants(c.id, newZone);
-    }
-  }
-}
-
-function cleanupOrphanCopies(originParentId) {
-  if (!originParentId) return;
-  for (const zone of zones) {
-    const copies = treeData.filter(i => i.isCopy && i.originParentId === originParentId && i.zone === zone.id);
-    for (const copy of copies) {
-      const hasItems = treeData.some(i =>
-        i.zone === zone.id && !i.isCopy && i.parentId === originParentId
-      );
-      if (!hasItems) treeData = treeData.filter(i => i.id !== copy.id);
-    }
-  }
-}
-
-function moveItemToZone(id, newZone) {
-  const item = treeData.find(i => i.id === id);
-  if (!item) return;
-  item.zone = newZone;
-  for (const sid of getDescendantIds(id)) {
-    const child = treeData.find(i => i.id === sid);
-    if (child) child.zone = newZone;
-  }
-}
-
-async function toggleCollapse(id) {
-  const item = treeData.find(i => i.id === id);
-  if (!item) return;
-  item.collapsed = !item.collapsed;
-  render();
-}
-
-async function addItem() {
-  const text = newTodoInput.value.trim();
-  if (!text) return;
-
-  pushUndo();
-
-  const zone = zoneSelect.value || 'todo';
-  const parentId = parentSelect.value || null;
-  const ddl = ddlInput.value || null;
-  const siblings = treeData.filter(i => i.parentId === parentId && i.zone === zone && !i.isCopy);
-  const maxOrder = siblings.reduce((max, s) => Math.max(max, s.order || 0), 0);
-
-  treeData.push({
-    id: generateId(), text, status: zone === 'goals' ? 'goal' : 'pending',
-    zone, ddl, parentId, collapsed: false, order: maxOrder + 1,
-    statusChangedAt: null, detachedParentId: null, isCopy: false,
-  });
-
-  if (parentId) {
-    const parent = treeData.find(i => i.id === parentId);
-    if (parent && parent.collapsed) parent.collapsed = false;
-  }
-
-  await saveToFile();
-  newTodoInput.value = '';
-  ddlInput.value = '';
-  render();
-  newTodoInput.focus();
-}
-
-async function deleteItem(id) {
-  pushUndo();
-  const item = treeData.find(i => i.id === id);
-  const descendants = getDescendantIds(id);
-  const idsToRemove = [id, ...descendants];
-
-  const originParentId = item?.parentId || item?.originParentId;
-
-  for (const rid of idsToRemove) {
-    if (moveTimers[rid]) { clearTimeout(moveTimers[rid]); delete moveTimers[rid]; }
-  }
-  treeData = treeData.filter(item => !idsToRemove.includes(item.id));
-
-  cleanupOrphanCopies(originParentId);
-
-  await saveToFile();
-  render();
-}
-
-async function clearZone(zoneId) {
-  pushUndo();
-  const idsToRemove = treeData.filter(i => i.zone === zoneId && !i.isCopy).map(i => i.id);
-  for (const id of idsToRemove) {
-    if (moveTimers[id]) { clearTimeout(moveTimers[id]); delete moveTimers[id]; }
-    idsToRemove.push(...getDescendantIds(id));
-  }
-  const copiesToRemove = treeData.filter(i => i.isCopy && i.zone === zoneId).map(i => i.id);
-  treeData = treeData.filter(item => !idsToRemove.includes(item.id) && !copiesToRemove.includes(item.id));
-  await saveToFile();
-  render();
-}
-
-function updateParentSelect() {
-  const currentValue = parentSelect.value;
-  const selectedZone = zoneSelect ? zoneSelect.value : null;
-  parentSelect.innerHTML = '<option value="">-- 根 --</option>';
-
-  function addOptions(items, depth = 0) {
-    for (const item of items) {
-      if (item.isCopy) continue;
-      const prefix = '  '.repeat(depth) + (depth > 0 ? '├ ' : '');
-      const option = document.createElement('option');
-      option.value = item.id;
-      option.textContent = prefix + item.text;
-      parentSelect.appendChild(option);
-      const children = getChildren(item.id).filter(i => !i.isCopy);
-      if (children.length > 0) addOptions(children, depth + 1);
-    }
-  }
-
-  for (const zone of zones) {
-    // 只列当前所选分区下现存的条目，避免残留其他分区/已删除的旧上游
-    if (selectedZone && zone.id !== selectedZone) continue;
-    const topLevel = treeData.filter(i => i.zone === zone.id && !i.parentId && !i.isCopy);
-    addOptions(topLevel);
-  }
-
-  // 选中项必须仍然存在且属于当前分区，否则回落到 -- 根 --
-  const sel = treeData.find(i => i.id === currentValue);
-  if (sel && !sel.isCopy && (!selectedZone || sel.zone === selectedZone)) {
-    parentSelect.value = currentValue;
-  } else {
-    parentSelect.value = '';
-  }
-}
-
-async function collapseAll() { treeData.forEach(item => { item.collapsed = true; }); render(); }
-async function expandAll() { treeData.forEach(item => { item.collapsed = false; }); render(); }
-
-async function changeFile() {
-  const result = await window.todoAPI.changeFile();
-  if (result) {
-    treeData = parseMarkdown(result.content);
-    filePathBar.textContent = result.filePath;
-    checkStaleStatuses();
-    await saveToFile();
-    render();
-  }
-}
-
-function checkStaleStatuses() {
-  for (const item of treeData) {
-    if (item.isCopy || item.parentId) continue;
-    const targetZone = { done: 'done', abandoned: 'abandoned', pending: 'todo' }[item.status];
-    if (targetZone && item.zone !== targetZone && item.zone !== 'goals') {
-      moveWithParentCopy(item.id, targetZone);
-    } else if (item.status === 'urgent') {
-      item.order = -Date.now();
-    }
-  }
-}
-
-function handleKeydown(e) { if (e.key === 'Enter') addItem(); }
-
-function showModal(title, defaultValue, callback) {
-  window.todoAPI.setFocusable(true);
-
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal-box">
-      <div class="modal-title">${title}</div>
-      <input class="modal-input" value="${defaultValue || ''}" autofocus>
-      <div class="modal-buttons">
-        <button class="modal-btn cancel">取消</button>
-        <button class="modal-btn confirm">确定</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  const input = overlay.querySelector('.modal-input');
-  const confirmBtn = overlay.querySelector('.confirm');
-  const cancelBtn = overlay.querySelector('.cancel');
-
-  const cleanup = () => {
-    overlay.remove();
-    window.todoAPI.setFocusable(false);
-  };
-
-  confirmBtn.addEventListener('click', () => { cleanup(); callback(input.value); });
-  cancelBtn.addEventListener('click', () => { cleanup(); callback(null); });
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) { cleanup(); callback(null); } });
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { cleanup(); callback(input.value); }
-    if (e.key === 'Escape') { cleanup(); callback(null); }
-  });
-  setTimeout(() => input.focus(), 50);
-}
-
-function updatePinUI() {
-  if (pinned) {
-    pinBtn.textContent = '📌';
-    pinBtn.className = 'btn-icon pinned';
-    pinBtn.title = '已锁定 (底层模式) | 点击解锁拖动';
-    headerEl.style.cursor = 'default';
-    document.body.style.cursor = 'default';
-  } else {
-    pinBtn.textContent = '📍';
-    pinBtn.className = 'btn-icon unpinned';
-    pinBtn.title = '已解锁 | 可拖动、吸附、缩放 | 点击锁定';
-    headerEl.style.cursor = 'move';
-  }
-}
-
-function setupDrag() {
-  headerEl.addEventListener('mousedown', (e) => {
-    if (pinned) return;
-    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-    isDragging = true; dragStartX = e.screenX; dragStartY = e.screenY;
-    headerEl.style.cursor = 'grabbing';
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    const dx = e.screenX - dragStartX, dy = e.screenY - dragStartY;
-    if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
-    dragStartX = e.screenX; dragStartY = e.screenY;
-    window.moveBy(dx, dy);
-  });
-  document.addEventListener('mouseup', async () => {
-    if (!isDragging) return;
-    isDragging = false;
-    if (!pinned) headerEl.style.cursor = 'move';
-    const wa = await window.todoAPI.getWorkArea();
-    const { screenX: wx, screenY: wy, outerWidth: w, outerHeight: h } = window;
-    const SNAP = 15;
-    let nx = wx, ny = wy;
-    if (Math.abs(wx - wa.x) <= SNAP) nx = wa.x;
-    else if (Math.abs((wx + w) - (wa.x + wa.width)) <= SNAP) nx = wa.x + wa.width - w;
-    if (Math.abs(wy - wa.y) <= SNAP) ny = wa.y;
-    else if (Math.abs((wy + h) - (wa.y + wa.height)) <= SNAP) ny = wa.y + wa.height - h;
-    if (nx !== wx || ny !== wy) window.moveTo(nx, ny);
-  });
-}
-
-async function togglePin() { pinned = await window.todoAPI.togglePin(); updatePinUI(); }
-
-// 锁定模式下点输入框：请求主进程临时摘回桌面层，拿到键盘焦点后再输入
-document.addEventListener('mousedown', async (e) => {
-  if (!pinned) return;
-  const input = e.target.closest('input, textarea');
-  if (!input) return;
-  const detached = await window.todoAPI.beginTransientEdit();
-  if (detached) setTimeout(() => input.focus(), 60);
-});
-
-let contextMenu = null;
-let contextMenuTargetId = null;
-function showContextMenu(e, id) {
-  hideContextMenu();
-  contextMenuTargetId = id;
-
-  const menu = document.createElement('div');
-  menu.className = 'context-menu';
-
-  const addDdl = document.createElement('div');
-  addDdl.className = 'context-menu-item';
-  addDdl.textContent = '添加/修改 DDL';
-  addDdl.onclick = (ev) => {
-    ev.stopPropagation();
-    hideContextMenu();
-    const item = treeData.find(i => i.id === id);
-    if (!item) return;
-    showModal('截止日期 (YYYY-MM-DD)', item.ddl || '', (val) => {
-      if (val !== null) {
-        item.ddl = val.trim() || null;
-        saveToFile().then(() => render());
-      }
+  if (ddl && !M.validDate(ddl)) return;
+  mutate(() => {
+    items.push({
+      id: M.id(),
+      text,
+      ddl: ddl || null,
+      zone,
+      parentId,
+      status: {
+        goals: "goal",
+        done: "done",
+        abandoned: "abandoned",
+        todo: "pending",
+      }[zone],
+      order: nextOrder(),
+      collapsed: false,
+      statusChangedAt: null,
     });
-  };
-
-  const addChild = document.createElement('div');
-  addChild.className = 'context-menu-item';
-  addChild.textContent = '添加子任务';
-  addChild.onclick = (ev) => {
-    ev.stopPropagation();
-    hideContextMenu();
-    const parent = treeData.find(i => i.id === id);
-    if (!parent) return;
-    showModal('子任务名称', '', (val) => {
-      if (val && val.trim()) {
-        const siblings = treeData.filter(i => i.parentId === id && i.zone === parent.zone && !i.isCopy);
-        const maxOrder = siblings.reduce((max, s) => Math.max(max, s.order || 0), 0);
-        treeData.push({
-          id: generateId(), text: val.trim(), status: parent.zone === 'goals' ? 'goal' : 'pending',
-          zone: parent.zone, ddl: null, parentId: id, collapsed: false, order: maxOrder + 1,
-          statusChangedAt: null, detachedParentId: null, isCopy: false, urgentOriginalOrder: null,
-        });
-        saveToFile().then(() => render());
-      }
-    });
-  };
-
-  const sep1 = document.createElement('div');
-  sep1.className = 'context-menu-separator';
-
-  const del = document.createElement('div');
-  del.className = 'context-menu-item danger';
-  del.textContent = '删除';
-  del.onclick = (ev) => { ev.stopPropagation(); deleteItem(id); hideContextMenu(); };
-
-  const delAll = document.createElement('div');
-  delAll.className = 'context-menu-item danger';
-  delAll.textContent = '删除含子任务';
-  delAll.onclick = (ev) => { ev.stopPropagation(); deleteItem(id); hideContextMenu(); };
-
-  menu.appendChild(addDdl);
-  menu.appendChild(addChild);
-  menu.appendChild(sep1);
-  menu.appendChild(del);
-  menu.appendChild(delAll);
-
-  menu.style.left = e.clientX + 'px';
-  menu.style.top = e.clientY + 'px';
-  document.body.appendChild(menu);
-  contextMenu = menu;
-}
-function hideContextMenu() { if (contextMenu) { contextMenu.remove(); contextMenu = null; } contextMenuTargetId = null; }
-document.addEventListener('click', (e) => { if (contextMenu && !contextMenu.contains(e.target)) hideContextMenu(); });
-document.addEventListener('contextmenu', (e) => { if (contextMenu && !contextMenu.contains(e.target)) hideContextMenu(); });
-
-window.todoAPI.onPinStateChanged((newPinned) => { pinned = newPinned; updatePinUI(); });
-
-document.addEventListener('DOMContentLoaded', async () => {
-  zonesContainer = document.getElementById('zones-container');
-  newTodoInput = document.getElementById('new-todo-input');
-  ddlInput = document.getElementById('ddl-input');
-  zoneSelect = document.getElementById('zone-select');
-  parentSelect = document.getElementById('parent-select');
-  statsEl = document.getElementById('stats');
-  filePathBar = document.getElementById('file-path-bar');
-  headerEl = document.querySelector('.header');
-  pinBtn = document.getElementById('pin-btn');
-  undoBtn = document.getElementById('undo-btn');
-  setupDrag();
-  window.addEventListener('resize', () => requestAnimationFrame(fitLastZone));
-
-  const result = await window.todoAPI.load();
-  treeData = parseMarkdown(result.content);
-  filePathBar.textContent = result.filePath;
-  checkStaleStatuses();
-  await saveToFile();
-  persistedHeights = await window.todoAPI.getZoneHeights();
-  render();
-  updatePinUI();
-
-  document.getElementById('add-btn').addEventListener('click', addItem);
-  document.getElementById('collapse-all').addEventListener('click', collapseAll);
-  document.getElementById('expand-all').addEventListener('click', expandAll);
-  document.getElementById('open-file-btn').addEventListener('click', changeFile);
-  document.getElementById('pin-btn').addEventListener('click', togglePin);
-  document.getElementById('undo-btn').addEventListener('click', undo);
-  document.getElementById('refresh-btn').addEventListener('click', () => window.todoAPI.reloadRenderer());
-  document.getElementById('close-btn').addEventListener('click', () => window.todoAPI.closeApp());
-  newTodoInput.addEventListener('keydown', handleKeydown);
-  zoneSelect.addEventListener('change', () => updateParentSelect());
-
-  const autoStartBtn = document.getElementById('auto-start-btn');
-  const autoStartState = await window.todoAPI.getAutoStart();
-  if (autoStartState) autoStartBtn.classList.add('active');
-  autoStartBtn.addEventListener('click', async () => {
-    const state = await window.todoAPI.toggleAutoStart();
-    autoStartBtn.classList.toggle('active', state);
+    const parent = items.find((i) => i.id === parentId);
+    if (parent) parent.collapsed = false;
+    closedZones = closedZones.filter((id) => id !== zone);
+    keep("closedZones", closedZones);
   });
-
-  // 字号循环切换：小 → 中 → 大 → 特大
-  const FONT_STEPS = [
-    { scale: 0.9, label: '小' },
-    { scale: 1, label: '中' },
-    { scale: 1.2, label: '大' },
-    { scale: 1.4, label: '特大' },
+  $("new-todo-input").value = "";
+  $("ddl-input").value = "";
+  $("new-todo-input").focus();
+}
+async function deleteItem(item) {
+  const descendants = M.descendants(items, item.id);
+  if (
+    descendants.length &&
+    !(await modal({
+      title: "删除这棵任务树？",
+      description:
+        "将删除“" +
+        item.text +
+        "”及其 " +
+        descendants.length +
+        " 项子任务，删除后可以撤回。",
+      confirm: true,
+      submit: "删除",
+    }))
+  )
+    return;
+  mutate(() => {
+    const ids = new Set([item.id, ...descendants.map((i) => i.id)]);
+    items = items.filter((i) => !ids.has(i.id));
+  });
+}
+async function menu(item, x, y) {
+  await api.beginTransientEdit();
+  const root = $("context-menu");
+  root.replaceChildren();
+  const actions = [
+    ["编辑任务", () => editItem(item)],
+    ["添加子任务", () => addChild(item)],
   ];
-  const fontBtn = document.getElementById('font-btn');
-  let fontStep = FONT_STEPS.findIndex(s => s.scale === parseFloat(localStorage.getItem('fontScale')));
-  if (fontStep < 0) fontStep = 1;
-  const applyFontStep = () => {
-    const step = FONT_STEPS[fontStep];
-    document.documentElement.style.setProperty('--font-scale', step.scale);
-    fontBtn.textContent = `A 字号:${step.label}`;
-    localStorage.setItem('fontScale', String(step.scale));
-    requestAnimationFrame(fitLastZone);
-  };
-  applyFontStep();
-  fontBtn.addEventListener('click', () => {
-    fontStep = (fontStep + 1) % FONT_STEPS.length;
-    applyFontStep();
-  });
-
-  for (const item of treeData) {
-    if (!item.isCopy && (item.status === 'done' || item.status === 'urgent' || item.status === 'abandoned')) {
-      const targetZone = { done: 'done', abandoned: 'abandoned', pending: 'todo' }[item.status];
-      if (targetZone && item.zone !== targetZone && item.zone !== 'goals') {
-        startAutoMove(item.id);
-      }
+  for (const status of ["pending", "done", "urgent", "goal", "abandoned"])
+    actions.push(["设为" + statusNames[status], () => setStatus(item, status)]);
+  actions.push(["删除任务", () => deleteItem(item), "danger"]);
+  for (const [label, action, style] of actions) {
+    const el = button(
+      label,
+      label,
+      () => {
+        root.hidden = true;
+        void action();
+      },
+      style,
+    );
+    el.setAttribute("role", "menuitem");
+    root.append(el);
+  }
+  root.hidden = false;
+  root.style.left =
+    Math.max(8, Math.min(x, innerWidth - root.offsetWidth - 8)) + "px";
+  root.style.top =
+    Math.max(8, Math.min(y, innerHeight - root.offsetHeight - 8)) + "px";
+  root.querySelector("button").focus();
+}
+function updateParentSelect() {
+  const select = $("parent-select"),
+    previous = select.value;
+  select.replaceChildren(new Option("独立任务", ""));
+  function add(parentId, depth = 0) {
+    for (const item of children(parentId).filter(
+      (i) => i.zone === $("zone-select").value,
+    )) {
+      select.add(
+        new Option("　".repeat(Math.min(depth, 6)) + item.text, item.id),
+      );
+      add(item.id, depth + 1);
     }
   }
+  // Include cross-zone roots whose parent is displayed in another section.
+  for (const item of items.filter(
+    (i) =>
+      i.zone === $("zone-select").value &&
+      i.parentId &&
+      items.find((p) => p.id === i.parentId)?.zone !== i.zone,
+  )) {
+    select.add(new Option("↳ " + item.text, item.id));
+    add(item.id, 1);
+  }
+  add(null);
+  select.value = [...select.options].some((o) => o.value === previous)
+    ? previous
+    : "";
+}
+function matches(item) {
+  const search = !query || item.text.toLocaleLowerCase().includes(query);
+  return (
+    search &&
+    (filter === "all" ||
+      (filter === "urgent"
+        ? item.status === "urgent"
+        : active(item) && item.ddl && item.ddl <= M.localDate()))
+  );
+}
+function render() {
+  const root = $("zones-container"),
+    scroll = root.scrollTop;
+  const scrolls = new Map(
+    [...root.querySelectorAll(".zone-body")].map((el) => [
+      el.dataset.zone,
+      el.scrollTop,
+    ]),
+  );
+  root.replaceChildren();
+  $("undo-btn").disabled = !undoStack.length;
+  const work = items.filter(
+    (i) => i.status !== "goal" && i.status !== "abandoned",
+  );
+  const done = work.filter((i) => i.status === "done").length;
+  const percentage = work.length ? Math.round((done / work.length) * 100) : 0;
+  $("pending-count").textContent = items.filter(active).length;
+  $("urgent-count").textContent = items.filter(
+    (i) => i.status === "urgent",
+  ).length;
+  $("done-count").textContent = done;
+  $("progress-value").replaceChildren(
+    document.createTextNode(String(percentage)),
+    element("span", "", "%"),
+  );
+  $("progress-ring").style.setProperty("--progress", percentage + "%");
+  $("progress-ring").setAttribute(
+    "aria-label",
+    "执行任务完成度 " + percentage + "%",
+  );
+  $("overview-caption").textContent = work.length
+    ? "执行任务已完成 " + done + " / " + work.length + " · 不含目标与放弃项"
+    : "写下第一件小事，就从这里开始";
+  const matched = items.filter(matches),
+    visible = new Set(matched.map((i) => i.id)),
+    filtered = !!query || filter !== "all";
+  if (filtered)
+    for (const item of matched) {
+      let parent = items.find((i) => i.id === item.parentId);
+      const seen = new Set();
+      while (parent && !seen.has(parent.id)) {
+        seen.add(parent.id);
+        visible.add(parent.id);
+        parent = items.find((i) => i.id === parent.parentId);
+      }
+    }
+  $("stats").textContent = filtered
+    ? matched.length + " 项匹配 / 共 " + items.length + " 项"
+    : "共 " + items.length + " 项";
+  for (const zoneId of zoneOrder) {
+    const zone = M.zones.find((z) => z.id === zoneId),
+      members = items.filter((i) => i.zone === zoneId).sort(ordered);
+    const section = element("section", "zone-section");
+    section.dataset.zoneId = zoneId;
+    const header = element("div", "zone-header");
+    const handle = element("span", "zone-drag", "⠿");
+    handle.draggable = true;
+    handle.title = "拖动调整分区顺序";
+    handle.addEventListener("dragstart", (e) => {
+      dragging = true;
+      e.dataTransfer.setData("text/zone", zoneId);
+    });
+    handle.addEventListener("dragend", () => {
+      dragging = false;
+    });
+    const collapsed = closedZones.includes(zoneId) && !filtered;
+    const toggle = button(
+      "",
+      (collapsed ? "展开" : "折叠") + zone.name,
+      () => {
+        closedZones = closedZones.includes(zoneId)
+          ? closedZones.filter((id) => id !== zoneId)
+          : [...closedZones, zoneId];
+        keep("closedZones", closedZones);
+        render();
+      },
+      "zone-toggle",
+    );
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.append(
+      element("span", "zone-symbol"),
+      element("span", "", zone.name),
+      element("span", "zone-count", String(members.length)),
+      element("span", "zone-chevron", collapsed ? "›" : "⌄"),
+    );
+    const add = button(
+      "+",
+      "添加到" + zone.name,
+      () => {
+        $("zone-select").value = zoneId;
+        updateParentSelect();
+        $("parent-select").value = "";
+        void api.beginTransientEdit().then(() => $("new-todo-input").focus());
+      },
+      "zone-add",
+    );
+    header.append(handle, toggle, add);
+    section.append(header);
+    const body = element("div", "zone-body");
+    body.dataset.zone = zoneId;
+    body.hidden = collapsed;
+    if (Number.isFinite(heights[zoneId]))
+      body.style.height = heights[zoneId] + "px";
+    body.addEventListener("pointerup", () => {
+      if (body.style.height) {
+        heights[zoneId] = Math.max(
+          38,
+          Math.min(480, parseFloat(body.style.height)),
+        );
+        void api.saveZoneHeights(heights);
+      }
+    });
+    const drawn = new Set();
+    const draw = (item, depth, number) => {
+      if (drawn.has(item.id) || (filtered && !visible.has(item.id))) return;
+      drawn.add(item.id);
+      body.append(renderRow(item, depth, number));
+      if (!item.collapsed || filtered)
+        children(item.id)
+          .filter((i) => i.zone === zoneId)
+          .forEach((child, index) => draw(child, depth + 1, index + 1));
+    };
+    members
+      .filter(
+        (i) =>
+          !i.parentId ||
+          items.find((p) => p.id === i.parentId)?.zone !== zoneId,
+      )
+      .forEach((item, index) => {
+        if (filtered && !visible.has(item.id)) return;
+        if (item.parentId) {
+          const parent = items.find((p) => p.id === item.parentId);
+          if (parent)
+            body.append(
+              element(
+                "p",
+                "parent-context",
+                "↳ " +
+                  parent.text +
+                  " · " +
+                  (M.zones.find((z) => z.id === parent.zone)?.name || ""),
+              ),
+            );
+        }
+        draw(item, 0, index + 1);
+      });
+    if (!drawn.size)
+      body.append(
+        element(
+          "p",
+          "zone-empty",
+          filtered
+            ? "没有匹配的任务"
+            : {
+                goals: "给想去的方向，留个位置",
+                todo: "暂时没有待办，享受这会儿轻松",
+                done: "每一个完成，都算数",
+                abandoned: "留白也没关系",
+              }[zoneId],
+        ),
+      );
+    section.append(body);
+    section.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      section.classList.add("drag-over");
+    });
+    section.addEventListener("dragleave", (e) => {
+      if (!section.contains(e.relatedTarget))
+        section.classList.remove("drag-over");
+    });
+    section.addEventListener("drop", (e) => {
+      e.preventDefault();
+      section.classList.remove("drag-over");
+      dragging = false;
+      const from = e.dataTransfer.getData("text/zone"),
+        taskId = e.dataTransfer.getData("text/task");
+      if (from && from !== zoneId) {
+        zoneOrder.splice(zoneOrder.indexOf(from), 1);
+        zoneOrder.splice(zoneOrder.indexOf(zoneId), 0, from);
+        keep("zoneOrder", zoneOrder);
+        render();
+      } else if (taskId) {
+        const item = items.find((i) => i.id === taskId);
+        if (!item || item.zone === zoneId) return;
+        mutate(() => {
+          for (const target of [item, ...M.descendants(items, item.id)]) {
+            target.zone = zoneId;
+            target.status = {
+              todo: "pending",
+              goals: "goal",
+              done: "done",
+              abandoned: "abandoned",
+            }[zoneId];
+            target.statusChangedAt = null;
+          }
+          item.order = nextOrder();
+        });
+      }
+    });
+    root.append(section);
+    body.scrollTop = scrolls.get(zoneId) || 0;
+  }
+  root.scrollTop = scroll;
+  updateParentSelect();
+}
+function renderRow(item, depth, number) {
+  const row = element("div", "node-row " + item.status);
+  row.style.setProperty("--depth", depth);
+  row.dataset.id = item.id;
+  row.draggable = true;
+  const hasChildren = children(item.id).some((i) => i.zone === item.zone);
+  const toggle = button(
+    hasChildren ? (item.collapsed ? "›" : "⌄") : "",
+    "展开或折叠子任务",
+    () =>
+      mutate(() => {
+        item.collapsed = !item.collapsed;
+      }),
+    "node-toggle",
+  );
+  toggle.disabled = !hasChildren;
+  const status = button(
+    { done: "✓", urgent: "!", goal: "·", abandoned: "−", pending: "" }[
+      item.status
+    ],
+    statusNames[item.status] + "，点击切换状态",
+    () => cycleStatus(item),
+    "status-dot " + item.status,
+  );
+  const text = element("span", "node-text", item.text);
+  text.addEventListener("dblclick", () => void editItem(item));
+  row.append(
+    toggle,
+    status,
+    element("span", "node-number", number + "."),
+    text,
+  );
+  if (item.ddl) {
+    const overdue = active(item) && item.ddl < M.localDate();
+    const deadline = element(
+      "span",
+      "deadline" + (overdue ? " overdue" : ""),
+      item.ddl === M.localDate() ? "今天" : item.ddl.slice(5).replace("-", "/"),
+    );
+    deadline.title = "截止 " + item.ddl + (overdue ? " · 已逾期" : "");
+    row.append(deadline);
+  }
+  row.append(
+    button(
+      "⋯",
+      "更多操作：" + item.text,
+      (e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        menu(item, rect.right, rect.bottom);
+      },
+      "row-menu",
+    ),
+  );
+  row.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    menu(item, e.clientX, e.clientY);
+  });
+  row.addEventListener("dragstart", (e) => {
+    dragging = true;
+    e.dataTransfer.setData("text/task", item.id);
+    e.stopPropagation();
+  });
+  row.addEventListener("dragend", () => {
+    dragging = false;
+  });
+  row.addEventListener("dragover", (e) => e.preventDefault());
+  row.addEventListener("drop", (e) => {
+    const from = items.find(
+      (i) => i.id === e.dataTransfer.getData("text/task"),
+    );
+    if (
+      !from ||
+      from.id === item.id ||
+      from.parentId !== item.parentId ||
+      from.zone !== item.zone
+    )
+      return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = false;
+    mutate(() => {
+      const siblings = items
+        .filter((i) => i.parentId === item.parentId && i.zone === item.zone)
+        .sort((a, b) => a.order - b.order);
+      siblings.splice(siblings.indexOf(from), 1);
+      siblings.splice(siblings.indexOf(item), 0, from);
+      const orders = siblings.map((i) => i.order).sort((a, b) => a - b);
+      siblings.forEach((i, index) => {
+        i.order = orders[index];
+      });
+    });
+  });
+  return row;
+}
+function updatePin(value) {
+  pinned = value;
+  $("pin-btn").classList.toggle("active", pinned);
+  $("pin-btn").setAttribute("aria-pressed", String(pinned));
+  $("pin-btn").title = pinned
+    ? "已固定到桌面 · 点击解锁"
+    : "浮动窗口 · 点击固定到桌面";
+}
+function applyTheme(theme) {
+  if (!["gold", "paper", "forest"].includes(theme)) theme = "gold";
+  document.documentElement.dataset.theme = theme;
+  keep("theme", theme);
+  document
+    .querySelectorAll("[data-theme-choice]")
+    .forEach((el) =>
+      el.setAttribute("aria-pressed", String(el.dataset.themeChoice === theme)),
+    );
+}
+function undo() {
+  if (!undoStack.length || !ready) return;
+  items = undoStack.pop();
+  editVersion++;
+  render();
+  void save();
+}
+document.addEventListener("DOMContentLoaded", async () => {
+  applyTheme(pref("theme", "gold"));
+  const opacity = Math.max(
+    65,
+    Math.min(100, Number(pref("opacity", 95)) || 95),
+  );
+  $("opacity").value = opacity;
+  document.documentElement.style.setProperty("--opacity", opacity / 100);
+  const fontSteps = [1, 1.12, 1.24];
+  let fontIndex = Math.max(0, Math.min(2, Number(pref("fontIndex", 0)) || 0));
+  const applyFont = () => {
+    document.documentElement.style.setProperty(
+      "--font-scale",
+      fontSteps[fontIndex],
+    );
+    $("font-btn").textContent = "字号：" + ["标准", "大", "更大"][fontIndex];
+  };
+  applyFont();
+  $("today").textContent = new Intl.DateTimeFormat("zh-CN", {
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  }).format(new Date());
+  $("add-btn").disabled = true;
+  if (!api) {
+    state("桌面连接失败", "error");
+    notice(
+      "无法连接桌面服务，请退出后重新启动 TodoTree。当前页面不会写入任务文件。",
+    );
+    $("notice").querySelector("div").hidden = true;
+    return;
+  }
+  $("add-btn").onclick = addItem;
+  $("new-todo-input").onkeydown = (e) => {
+    if (e.key === "Enter" && !e.isComposing) {
+      e.preventDefault();
+      addItem();
+    }
+  };
+  $("zone-select").onchange = updateParentSelect;
+  $("undo-btn").onclick = undo;
+  $("pin-btn").onclick = async () => updatePin(await api.togglePin());
+  $("close-btn").onclick = async () => {
+    if (await allowDiscard("退出 TodoTree？")) await api.closeApp();
+  };
+  $("refresh-btn").onclick = () => {
+    $("settings").open = false;
+    void reload();
+  };
+  $("open-file-btn").onclick = async () => {
+    $("settings").open = false;
+    if (!(await allowDiscard("切换任务文件？"))) return;
+    switching = true;
+    try {
+      const result = await api.changeFile();
+      if (result) acceptLoaded(result);
+    } catch (e) {
+      notice(e.message);
+    } finally {
+      switching = false;
+    }
+  };
+  $("file-path-bar").onclick = () => {
+    $("settings").open = true;
+  };
+  $("backup-btn").onclick = () => void api.openBackups();
+  $("retry-btn").onclick = async () => {
+    if (!ready) {
+      acceptLoaded(await api.load());
+      return;
+    }
+    blocked = false;
+    hideNotice();
+    await save();
+  };
+  $("load-btn").onclick = () => void reload();
+  $("copy-btn").onclick = async () => {
+    const result = await api.saveCopy(serialize());
+    if (result?.success) {
+      state("副本已保存；原文件尚未同步", "error");
+      $("notice-text").textContent =
+        "当前更改已保存在 " + result.filePath + "，现在可以载入外部版本。";
+    } else if (result) notice(result.error || "保存副本失败", true);
+  };
+  $("font-btn").onclick = () => {
+    fontIndex = (fontIndex + 1) % fontSteps.length;
+    keep("fontIndex", fontIndex);
+    applyFont();
+  };
+  const applyCompact = () => {
+    const compact = !!pref("compact", false);
+    document.body.classList.toggle("compact", compact);
+    $("compact-btn").textContent = "紧凑视图：" + (compact ? "开" : "关");
+  };
+  applyCompact();
+  $("compact-btn").onclick = () => {
+    keep("compact", !pref("compact", false));
+    applyCompact();
+  };
+  $("opacity").oninput = () => {
+    document.documentElement.style.setProperty(
+      "--opacity",
+      Number($("opacity").value) / 100,
+    );
+    keep("opacity", Number($("opacity").value));
+  };
+  document
+    .querySelectorAll("[data-theme-choice]")
+    .forEach((el) => (el.onclick = () => applyTheme(el.dataset.themeChoice)));
+  document.querySelectorAll("[data-filter]").forEach(
+    (el) =>
+      (el.onclick = () => {
+        filter = el.dataset.filter;
+        document
+          .querySelectorAll("[data-filter]")
+          .forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
+        render();
+      }),
+  );
+  $("search").oninput = () => {
+    query = $("search").value.trim().toLocaleLowerCase();
+    render();
+  };
+  for (const [id, collapsed] of [
+    ["collapse-all", true],
+    ["expand-all", false],
+  ])
+    $(id).onclick = () => {
+      closedZones = collapsed ? [...zoneOrder] : [];
+      keep("closedZones", closedZones);
+      mutate(() =>
+        items.forEach((i) => {
+          i.collapsed = collapsed;
+        }),
+      );
+      $("settings").open = false;
+    };
+  try {
+    heights = await api.getZoneHeights();
+    if (!heights || typeof heights !== "object") heights = {};
+    acceptLoaded(await api.load());
+    const auto = await api.getAutoStart();
+    $("auto-start-btn").textContent = "开机自启：" + (auto ? "开" : "关");
+    $("auto-start-btn").onclick = async () => {
+      const enabled = await api.toggleAutoStart();
+      $("auto-start-btn").textContent = "开机自启：" + (enabled ? "开" : "关");
+    };
+  } catch (e) {
+    state("读取失败", "error");
+    notice(e.message);
+  }
+  if (api.isPreview) {
+    $("storage-badge").textContent = "演示 · 不写入文件";
+    $("pin-btn").disabled = true;
+    $("auto-start-btn").disabled = true;
+  }
 });
-
+document.addEventListener("pointerdown", (e) => {
+  if (!$("context-menu").contains(e.target)) $("context-menu").hidden = true;
+  if (!$("settings").contains(e.target)) $("settings").open = false;
+  if (pinned && e.target.closest("input,select"))
+    void api.beginTransientEdit().then(() => {
+      if (e.target.isConnected) e.target.focus();
+    });
+});
+document.addEventListener("keydown", (e) => {
+  const input = e.target.closest("input,textarea,[contenteditable=true]");
+  if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+    if (e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      $("search").focus();
+    }
+    if (e.key.toLowerCase() === "n" && !$("task-dialog").open) {
+      e.preventDefault();
+      $("new-todo-input").focus();
+    }
+    if (e.key.toLowerCase() === "z" && !input && !$("task-dialog").open) {
+      e.preventDefault();
+      undo();
+    }
+  }
+  if (e.key === "Escape") {
+    $("context-menu").hidden = true;
+    $("settings").open = false;
+  }
+  if (!$("context-menu").hidden && ["ArrowDown", "ArrowUp"].includes(e.key)) {
+    e.preventDefault();
+    const buttons = [...$("context-menu").querySelectorAll("button")],
+      current = buttons.indexOf(document.activeElement);
+    buttons[
+      (current + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) %
+        buttons.length
+    ].focus();
+  }
+});
+api?.onPinStateChanged(updatePin);
+api?.onCloseRequested?.(async () => {
+  if ($("task-dialog").open) return;
+  if (await allowDiscard("退出 TodoTree？")) await api.closeApp();
+});
 setInterval(async () => {
-  if (savingInProgress || lastSyncMtime === null || isDragging) return;
-  if (document.querySelector('.modal-overlay')) return;
-  const mtime = await window.todoAPI.getFileMtime();
-  if (mtime !== null && mtime !== lastSyncMtime) {
-    window.todoAPI.reloadRenderer();
+  if (
+    !ready ||
+    saving ||
+    blocked ||
+    dragging ||
+    switching ||
+    $("task-dialog").open
+  )
+    return;
+  try {
+    const result = await api.load();
+    if (!result.success) {
+      state("读取失败", "error");
+      notice(result.error);
+      return;
+    }
+    if (result.revision !== revision) {
+      if (dirty() || $("new-todo-input").value.trim()) {
+        blocked = true;
+        notice("文件已在外部修改。请先保存副本，再载入外部版本。", true);
+        state("等待处理文件变化", "error");
+      } else acceptLoaded(result);
+    }
+  } catch (e) {
+    notice(e.message);
   }
 }, 15000);
+setInterval(() => {
+  if (
+    !ready ||
+    blocked ||
+    saving ||
+    dragging ||
+    switching ||
+    $("task-dialog").open
+  )
+    return;
+  const snapshot = clone(items);
+  if (M.settle(items)) {
+    undoStack.push(snapshot);
+    if (undoStack.length > 20) undoStack.shift();
+    editVersion++;
+    render();
+    void save();
+  }
+}, 1000);

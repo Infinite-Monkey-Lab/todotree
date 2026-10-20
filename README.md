@@ -1,82 +1,131 @@
 <div align="center">
 
-<img src="icon.png" width="72" alt="TodoTree" />
+<img src="icon.png" width="64" alt="TodoTree" />
 
 # TodoTree
 
-**暗金半透明 · 锁在桌面底层的 Markdown 待办墙**
+**把大目标拆成小事，放在每天看得见的桌面上。**
 
-[![Release](https://img.shields.io/github/v/release/yunyancuo/todotree?style=flat-square&color=dd4f6b)](https://github.com/yunyancuo/todotree/releases)
-[![Platform](https://img.shields.io/badge/Windows-10%2B-24292F?style=flat-square&logo=windows&logoColor=white)](https://github.com/yunyancuo/todotree/releases)
-[![License](https://img.shields.io/badge/License-MIT-24292F?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/yunyancuo/todotree?style=flat-square)](https://github.com/yunyancuo/todotree/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-24292F?style=flat-square)](https://github.com/yunyancuo/todotree/releases)
+[![MIT](https://img.shields.io/badge/License-MIT-24292F?style=flat-square)](LICENSE)
 
-<img src="docs/demo.png" width="400" alt="TodoTree 运行截图" />
-
-**双击即用 · 数据就是一个 Markdown 文件 · 不注册、不上传、离线可用**
+本地 Markdown · 四分区任务树 · 三套主题 · 无需账号
 
 </div>
 
----
+|               暗金               |               纸白                |                松绿                |
+| :------------------------------: | :-------------------------------: | :--------------------------------: |
+| ![暗金主题](docs/theme-gold.jpg) | ![纸白主题](docs/theme-paper.jpg) | ![松绿主题](docs/theme-forest.jpg) |
 
-一款基于 Electron 的 Windows 桌面待办工具。读取 Markdown 文件（默认 `~/Desktop/TODOTREE.md`），以半透明暗金窗口锁死在桌面底层，提供四分区（目标/待完成/已完成/放弃）任务管理、无限层级子任务、状态循环流转、拖拽排序、DDL 截止日期等功能。
+> 截图使用演示数据与紧凑视图。本分支为 **1.7.0 开发版**，正式发布的安装包以 [Releases](https://github.com/yunyancuo/todotree/releases) 为准。
 
-## 核心特性
+TodoTree 是一个 Windows 桌面待办工具。把任务固定在桌面层，分为目标、待完成、已完成和放弃四个区域。任务可以继续拆成子任务；数据保存在自己的 Markdown 文件里，不需要注册，也没有云端上传。
 
-- **真·桌面层锚定** — 通过 WorkerW/Progman 把窗口挂进桌面树：永远垫在所有普通窗口之下、桌面图标之上，Win+D 显示桌面也不消失，explorer 重启自动恢复；锁定时点击输入框会临时浮到前台拿键盘焦点，失焦自动回到底层
-- **点击循环** — 点方框循环：待办 → 完成 → 加急 → 放弃 → 待办，一分钟后自动流转
-- **分区拖拽** — 四个分区可拖拽标题调顺序，拖拽分隔线调大小，持久化记忆
-- **父子联动** — 父任务操作级联所有子任务；子任务跨区自动复制父任务副本
-- **拖拽排序** — 拖任务行随意调序；父任务中文编号（一、二、三），子任务阿拉伯数字
-- **右键菜单** — 右键添加子任务、修改 DDL、删除
-- **撤回/自启/图标** — 支持撤销 20 步、开机自启、一键创建桌面快捷方式
-- **外部修改同步** — 🔄 按钮手动同步文件；15 秒轮询自动感知外部修改（如脚本写入）并重载；检测到外部修改时覆盖前自动备份为 `TODOTREE_外部修改备份_时间戳.md`
+## 1.7 这一轮改了什么
+
+- **暗金保留，增加纸白与松绿。** 主题、背景不透明度、任务字号和紧凑视图都会记住。完整视图有完成度概览；紧凑视图把空间留给任务。
+- **任务更好找、更好改。** 按名称搜索，筛选紧急或到期任务；双击编辑名称和截止日期。右键或行末菜单可以添加子任务、直接指定状态和删除。
+- **任务树不会因为跨区而断开。** 完成的子任务流转到其他区域后，仍保留父任务关系，并显示来源提示。保存、重启后也能恢复。
+- **保存有反馈，也有退路。** 连续操作按顺序保存；失败时明确提示“更改未保存”。检测到外部修改后停止覆盖，可以先保存副本，再载入外部版本。
+- **原文件采用临时文件替换，并保留最近 20 份旧版本。** 从设置中的“查看自动备份”打开当前文件的备份目录。
+- **修复配置互相覆盖和桌面恢复的问题。** 调整窗口不会再清掉分区高度；挂接桌面失败会回到可操作的浮动窗口。重复启动可唤出浮动窗口。
 
 ## 快速开始
 
-### 下载安装包（推荐）
-
-从 [**Releases**](https://github.com/yunyancuo/todotree/releases) 下载最新 `TodoTree-Setup-x.x.x.exe`，双击安装即用，无需 Node.js。
-
-> 数据文件默认在桌面 `TODOTREE.md`，随便什么编辑器都能改，改完 15 秒内自动刷新。
+从 [Releases](https://github.com/yunyancuo/todotree/releases) 下载已发布的 Windows 安装包，安装后打开。默认数据文件为系统桌面的 `TODOTREE.md`，首次添加任务才创建文件。也可以在设置中选择已有的 `.md` / `.txt` 文件。
 
 ### 从源码运行
 
-```bash
+建议使用 Node.js 24 LTS；本次在 Node.js 24 和 Windows 11 上完成打包验证。
+
+```sh
 git clone https://github.com/yunyancuo/todotree.git
 cd todotree
-npm install
+npm ci
 npm start
 ```
 
-Windows 用户可直接双击 `start.bat`。
+如果 npm 提示 Electron 的安装脚本需要授权，按 npm 的提示允许该依赖的安装脚本后再运行。Windows 也可以双击 `start.bat`。
 
-## Markdown 数据格式
+### 演示与录屏
+
+```sh
+npm run demo
+```
+
+桌面演示默认使用独立的临时数据目录和示例任务，从浮动窗口启动，不读取正式配置。适合试主题或录屏；演示中的更改会写入演示文件。
+
+```sh
+npm run preview
+```
+
+浏览器预览需要 Python 3。打开终端显示的本地地址；该模式显示“演示 · 不写入文件”，编辑仅在当前页面保留。桌面固定、文件选择和自启需要使用桌面版。
+
+## 常用操作
+
+| 操作       | 方法                                                                   |
+| ---------- | ---------------------------------------------------------------------- |
+| 添加任务   | 输入名称后按 Enter，或点加号；可选分区、父任务和日期                   |
+| 编辑       | 双击任务文字，或打开行末菜单                                           |
+| 完成与加急 | 点击圆点，依次切换待办 → 完成 → 紧急 → 放弃；也可以在菜单中直接选择    |
+| 自动流转   | 状态改变 60 秒后转到对应分区；目标分区不自动流转                       |
+| 父子联动   | 更改父任务状态会同时应用到其子任务；删除带子任务的任务会先确认         |
+| 拖动       | 行拖动调整同级顺序；拖到分区可移动整棵子树；拖分区左侧手柄调整分区顺序 |
+| 调整分区   | 拖动内容区右下角改变高度；点击标题折叠                                 |
+| 撤回       | 左上角撤回，或不在输入框中按 Ctrl+Z，最多 20 步                        |
+| 快捷键     | Ctrl+N 聚焦新任务，Ctrl+F 搜索，Esc 关闭菜单或对话框                   |
+| 桌面模式   | 顶部定位按钮切换桌面固定 / 浮动窗口；浮动模式可拖动标题栏              |
+
+紧急任务优先显示。完成度统计所有执行任务，包括子任务；不计目标状态和放弃状态的任务，搜索筛选不改变该统计口径。
+
+## Markdown 格式与外部编辑
 
 ```markdown
 # TodoTree
 
 ## 目标
-- [>] 长期目标 | ddl:2026-12-31
-  - [>] 子目标
+
+- [>] 想去的方向
+  - [>] 一个可以拆解的目标
 
 ## 待完成
-- [ ] 一级任务
-  - [ ] 子任务 A
-  - [ ] 子任务 B
+
+- [ ] 普通任务 | ddl:2026-12-31
+  - [!] 紧急子任务
 
 ## 已完成
-- [x] 已完成任务
+
+- [x] 已完成的事
 
 ## 放弃
-- [~] 废弃任务
+
+- [~] 决定不做的事
 ```
 
-## 技术栈
+兼容旧版四分区格式。首次实际修改时会为任务添加隐藏的 `todotree` HTML 注释，用于记住身份、折叠状态、流转计时和跨分区父子关系。保留这些注释可以保持关联；同一分区的父子层级仍由缩进决定。应用不会仅因打开文件就重写内容。
 
-Electron · Vanilla JS · Node.js fs · Markdown
+四个已知分区外的标题、说明文字与围栏代码会保留，代码示例里的任务不会被导入。保存会整理受管理分区的任务，分区内的说明文字保留在任务列表之后；不承诺原始排版逐字不变。
 
-## 许可
+每 15 秒检查外部内容变化。没有本地编辑时直接同步；存在待保存内容或正在输入的新任务时提示处理变化。保存时还会比较内容摘要，发现变化则拒绝覆盖。副本保存不会自动解决原文件的冲突。
 
-本项目采用 [MIT License](LICENSE)，Copyright (c) 2026 yunyancuo。
+自动备份位于应用数据目录下的 `backups/文件名-路径摘要/`，每个文件保留 20 份。恢复时可先复制需要的备份，再通过设置打开该副本。
 
-使用、修改或分发本项目时，请保留许可证和版权声明。第三方依赖保留各自许可证；后续从源码构建的应用包会包含本项目的 `LICENSE` 文件。
+1.7 写回的隐藏注释可能在旧版应用中显示为普通文字，旧版也无法还原跨分区关系。需要回退时，先从自动备份复制升级前的数据文件。
+
+## 开发与验证
+
+```sh
+npm test
+npm run build
+```
+
+测试覆盖跨分区与深层任务树、外部缩进编辑、代码块和说明保留、连续编辑保存队列、写入失败与冲突、备份轮换、配置合并、桌面失败回退和退出前的保存流程。安装包输出到 `dist/`。
+
+技术栈：Electron 44 · 原生 JavaScript / CSS · Node.js 文件系统 · koffi / Win32 桌面层。
+
+已检查浏览器 520×740 和 380×500 布局，以及打包应用的启动、主题切换和实际文件保存。多屏不同缩放比例、睡眠唤醒和资源管理器重启仍需要更广泛的 Windows 设备验证。
+
+## 许可与作者
+
+[MIT License](LICENSE) · Copyright (c) 2026 [yunyancuo](https://github.com/yunyancuo)。第三方依赖保留各自许可证。
