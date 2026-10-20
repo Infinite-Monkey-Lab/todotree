@@ -10,6 +10,10 @@ const {
 const path = require("path");
 const fs = require("fs");
 const demoMode = process.argv.includes("--demo");
+// Keep the original profile when changing the visible product name to Todo.
+const legacyProfile = path.join(app.getPath("appData"), "todotree");
+fs.mkdirSync(legacyProfile, { recursive: true });
+app.setPath("userData", legacyProfile);
 if (demoMode) {
   const demoData = path.join(app.getPath("temp"), "TodoTree-demo");
   fs.mkdirSync(demoData, { recursive: true });
@@ -33,7 +37,7 @@ if (!app.requestSingleInstanceLock()) {
   const fileStore = require("./lib/file-store");
   const seed = demoMode
     ? fs.readFileSync(path.join(__dirname, "examples", "demo.md"), "utf8")
-    : "# TodoTree\n\n## 目标\n\n## 待完成\n\n## 已完成\n\n## 放弃\n";
+    : "# Todo\n\n## 目标\n\n## 待完成\n\n## 已完成\n\n## 放弃\n";
 
   let currentFilePath = path.join(app.getPath("desktop"), "TODOTREE.md");
   if (demoMode)
@@ -314,7 +318,7 @@ if (!app.requestSingleInstanceLock()) {
 
   ipcMain.handle("toggle-auto-start", () => {
     const current = app.getLoginItemSettings().openAtLogin;
-    const settings = { openAtLogin: !current };
+    const settings = { openAtLogin: !current, name: "TodoTree" };
     // 开发模式跑的是 electron.exe，必须带上项目路径参数，否则开机弹出 Electron 默认页
     if (!app.isPackaged) settings.args = [__dirname];
     app.setLoginItemSettings(settings);

@@ -140,7 +140,7 @@
   }
   function serialize(
     items,
-    blocks = [{ zone: null, heading: null, raw: ["# TodoTree", ""] }],
+    blocks = [{ zone: null, heading: null, raw: ["# Todo", ""] }],
   ) {
     const lines = [],
       written = new Set();

@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="icon.png" width="64" alt="TodoTree" />
+<img src="icon.png" width="64" alt="Todo" />
 
-# TodoTree
+# Todo
 
 **把大目标拆成小事，放在每天看得见的桌面上。**
 
@@ -20,7 +20,7 @@
 
 > 截图使用演示数据与紧凑视图。本分支为 **1.7.0 开发版**，正式发布的安装包以 [Releases](https://github.com/yunyancuo/todotree/releases) 为准。
 
-TodoTree 是一个 Windows 桌面待办工具。把任务固定在桌面层，分为目标、待完成、已完成和放弃四个区域。任务可以继续拆成子任务；数据保存在自己的 Markdown 文件里，不需要注册，也没有云端上传。
+Todo 是一个 Windows 桌面待办工具。把任务固定在桌面层，分为目标、待完成、已完成和放弃四个区域。任务可以继续拆成子任务；数据保存在自己的 Markdown 文件里，不需要注册，也没有云端上传。
 
 ## 1.7 这一轮改了什么
 
@@ -32,6 +32,8 @@ TodoTree 是一个 Windows 桌面待办工具。把任务固定在桌面层，�
 - **修复配置互相覆盖和桌面恢复的问题。** 调整窗口不会再清掉分区高度；挂接桌面失败会回到可操作的浮动窗口。重复启动可唤出浮动窗口。
 
 ## 快速开始
+
+应用名称改为 **Todo**，使用原来的紫底对勾标识。已有的任务文件、配置和开机启动身份继续沿用。
 
 从 [Releases](https://github.com/yunyancuo/todotree/releases) 下载已发布的 Windows 安装包，安装后打开。默认数据文件为系统桌面的 `TODOTREE.md`，首次添加任务才创建文件。也可以在设置中选择已有的 `.md` / `.txt` 文件。
 
@@ -82,7 +84,7 @@ npm run preview
 ## Markdown 格式与外部编辑
 
 ```markdown
-# TodoTree
+# Todo
 
 ## 目标
 

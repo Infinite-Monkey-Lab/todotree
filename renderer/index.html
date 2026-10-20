@@ -7,15 +7,15 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
-    <title>TodoTree · 桌面任务树</title>
+    <title>Todo · 桌面任务树</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main class="app">
       <header class="header">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true">↟</span>
-          <h1>TodoTree</h1>
+          <img class="brand-mark" src="logo.png" alt="" aria-hidden="true" />
+          <h1>Todo</h1>
           <span class="version">1.7</span>
         </div>
         <div class="window-actions">
@@ -85,7 +85,7 @@
           <button
             id="close-btn"
             class="icon-button close"
-            aria-label="退出 TodoTree"
+            aria-label="退出 Todo"
             title="退出"
           >
             ×
@@ -175,7 +175,7 @@
     </main>
     <dialog id="task-dialog">
       <form id="dialog-form">
-        <p class="eyebrow">TODOTREE</p>
+        <p class="eyebrow">TODO</p>
         <h2 id="dialog-title"></h2>
         <p id="dialog-description"></p>
         <label id="dialog-text-label"

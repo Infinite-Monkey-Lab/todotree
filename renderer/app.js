@@ -752,7 +752,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (!api) {
     state("桌面连接失败", "error");
     notice(
-      "无法连接桌面服务，请退出后重新启动 TodoTree。当前页面不会写入任务文件。",
+      "无法连接桌面服务，请退出后重新启动 Todo。当前页面不会写入任务文件。",
     );
     $("notice").querySelector("div").hidden = true;
     return;
@@ -768,7 +768,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("undo-btn").onclick = undo;
   $("pin-btn").onclick = async () => updatePin(await api.togglePin());
   $("close-btn").onclick = async () => {
-    if (await allowDiscard("退出 TodoTree？")) await api.closeApp();
+    if (await allowDiscard("退出 Todo？")) await api.closeApp();
   };
   $("refresh-btn").onclick = () => {
     $("settings").open = false;
@@ -923,7 +923,7 @@ document.addEventListener("keydown", (e) => {
 api?.onPinStateChanged(updatePin);
 api?.onCloseRequested?.(async () => {
   if ($("task-dialog").open) return;
-  if (await allowDiscard("退出 TodoTree？")) await api.closeApp();
+  if (await allowDiscard("退出 Todo？")) await api.closeApp();
 });
 setInterval(async () => {
   if (

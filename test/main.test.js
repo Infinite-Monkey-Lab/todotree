@@ -10,7 +10,9 @@ async function boot(t, config = {}, failAttach = false, lock = true) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "todotree-main-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, "desktop"));
-  const configPath = path.join(dir, "config.json");
+  let userDataPath = path.join(dir, "todotree");
+  fs.mkdirSync(userDataPath);
+  const configPath = path.join(userDataPath, "config.json");
   fs.writeFileSync(configPath, JSON.stringify(config));
   const handlers = new Map(),
     timers = [],
@@ -51,7 +53,15 @@ async function boot(t, config = {}, failAttach = false, lock = true) {
   }
   const app = new EventEmitter();
   Object.assign(app, {
-    getPath: (key) => (key === "desktop" ? path.join(dir, "desktop") : dir),
+    getPath: (key) =>
+      key === "desktop"
+        ? path.join(dir, "desktop")
+        : key === "userData"
+          ? userDataPath
+          : dir,
+    setPath: (key, value) => {
+      if (key === "userData") userDataPath = value;
+    },
     requestSingleInstanceLock: () => lock,
     whenReady: () => Promise.resolve(),
     quit: () => {
@@ -119,6 +129,10 @@ test("saving window bounds preserves previously saved section heights and other 
     zoneHeights: { todo: 123 },
     otherPreference: "keep",
   });
+  assert.equal(
+    fixture.app.getPath("userData"),
+    path.join(fixture.dir, "todotree"),
+  );
   await fixture.handlers.get("save-zone-heights")(null, {
     todo: 210,
     done: 70,

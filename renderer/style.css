@@ -126,10 +126,10 @@ input::placeholder {
   gap: 8px;
 }
 .brand-mark {
-  font:
-    30px/1 Georgia,
-    serif;
-  color: var(--accent);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  object-fit: contain;
 }
 h1 {
   font-size: 17px;

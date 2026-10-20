@@ -12,7 +12,8 @@
   },
   "build": {
     "appId": "com.todotree.app",
-    "productName": "TodoTree",
+    "productName": "Todo",
+    "executableName": "TodoTree",
     "win": {
       "target": "nsis",
       "icon": "icon.png"
@@ -23,7 +24,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "artifactName": "TodoTree-Setup-${version}.exe"
+      "artifactName": "Todo-Setup-${version}.exe"
     },
     "files": [
       "main.js",

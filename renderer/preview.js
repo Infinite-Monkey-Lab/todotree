@@ -4,14 +4,14 @@ if (!window.todoAPI && /^https?:$/.test(window.location.protocol)) {
     pinned = false,
     sequence = 0;
   const today = TaskModel.localDate();
-  const demo = `# TodoTree
+  const demo = `# Todo
 
 ## 目标
 - [>] 让自己的小工具，被更多人用到
   - [>] 做一款愿意每天打开的桌面待办
 
 ## 待完成
-- [!] 打磨 TodoTree 的第一印象 | ddl:${today}
+- [!] 打磨 Todo 的第一印象 | ddl:${today}
   - [x] 保留喜欢的暗金色
   - [ ] 试试纸白和松绿主题
 - [ ] 读完今天的论文，记下一个想法
