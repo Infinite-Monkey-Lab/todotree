@@ -28,7 +28,8 @@
       "desktop-layer.js",
       "renderer/**",
       "node_modules/**",
-      "package.json"
+      "package.json",
+      "LICENSE"
     ]
   },
   "devDependencies": {

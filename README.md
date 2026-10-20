@@ -77,4 +77,6 @@ Electron · Vanilla JS · Node.js fs · Markdown
 
 ## 许可
 
-MIT
+本项目采用 [MIT License](LICENSE)，Copyright (c) 2026 yunyancuo。
+
+使用、修改或分发本项目时，请保留许可证和版权声明。第三方依赖保留各自许可证；后续从源码构建的应用包会包含本项目的 `LICENSE` 文件。
