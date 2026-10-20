@@ -18,7 +18,7 @@
 | :------------------------------: | :-------------------------------: | :--------------------------------: |
 | ![暗金主题](docs/theme-gold.jpg) | ![纸白主题](docs/theme-paper.jpg) | ![松绿主题](docs/theme-forest.jpg) |
 
-> 截图使用演示数据与紧凑视图。本分支为 **1.7.0 开发版**，正式发布的安装包以 [Releases](https://github.com/yunyancuo/todotree/releases) 为准。
+> 截图使用演示数据与紧凑视图。当前版本为 **1.7.0**，Windows 安装包见 [Releases](https://github.com/yunyancuo/todotree/releases) 为准。
 
 Todo 是一个 Windows 桌面待办工具。把任务固定在桌面层，分为目标、待完成、已完成和放弃四个区域。任务可以继续拆成子任务；数据保存在自己的 Markdown 文件里，不需要注册，也没有云端上传。
 
