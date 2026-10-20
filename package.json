@@ -1,15 +1,19 @@
 {
   "name": "todotree",
-  "version": "1.6.1",
-  "description": "暗金半透明桌面待办工具 - 4 分区自动化任务管理",
+  "version": "1.7.0",
+  "description": "可切换主题的本地 Markdown 桌面任务树",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win nsis"
+    "build": "electron-builder --win nsis",
+    "test": "node --test test/*.test.js",
+    "preview": "python -m http.server 8765 --bind 127.0.0.1 --directory renderer",
+    "demo": "electron . --demo"
   },
   "build": {
     "appId": "com.todotree.app",
-    "productName": "TodoTree",
+    "productName": "Todo",
+    "executableName": "TodoTree",
     "win": {
       "target": "nsis",
       "icon": "icon.png"
@@ -20,7 +24,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "artifactName": "TodoTree-Setup-${version}.exe"
+      "artifactName": "Todo-Setup-${version}.exe"
     },
     "files": [
       "main.js",
@@ -29,15 +33,23 @@
       "renderer/**",
       "node_modules/**",
       "package.json",
-      "LICENSE"
+      "LICENSE",
+      "lib/**",
+      "examples/**"
     ]
   },
   "devDependencies": {
-    "electron": "^33.0.0",
+    "electron": "44.9.1",
     "electron-builder": "^26.15.3"
   },
   "license": "MIT",
   "dependencies": {
     "koffi": "^3.2.1"
+  },
+  "author": "yunyancuo",
+  "homepage": "https://github.com/yunyancuo/todotree",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yunyancuo/todotree.git"
   }
 }

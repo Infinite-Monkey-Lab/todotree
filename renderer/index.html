@@ -1,52 +1,202 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TodoTree</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div class="app">
-    <header class="header">
-      <h1 class="title">TodoTree</h1>
-      <button id="pin-btn" class="btn-icon" title="解锁拖动">📌</button>
-      <button id="undo-btn" class="btn-icon" title="撤回" disabled>↩</button>
-      <button id="refresh-btn" class="btn-icon" title="刷新同步文件">🔄</button>
-      <button id="open-file-btn" class="btn-icon" title="打开文件">📂</button>
-      <button id="collapse-all" class="btn-icon" title="折叠全部">▶</button>
-      <button id="expand-all" class="btn-icon" title="展开全部">▼</button>
-      <button id="close-btn" class="btn-icon btn-close" title="关闭">✕</button>
-    </header>
-
-    <div class="file-path-bar" id="file-path-bar"></div>
-
-    <div class="add-form">
-      <input type="text" id="new-todo-input" placeholder="添加任务...">
-      <input type="date" id="ddl-input" class="ddl-input" title="截止日期">
-      <select id="zone-select">
-        <option value="todo">待完成</option>
-        <option value="done">已完成</option>
-        <option value="goals">目标</option>
-        <option value="abandoned">放弃</option>
-      </select>
-      <select id="parent-select">
-        <option value="">-- 根 --</option>
-      </select>
-      <button id="add-btn" class="btn-add">+</button>
-    </div>
-
-    <div class="zones-container" id="zones-container"></div>
-
-    <footer class="footer">
-      <span id="stats">共 0 项</span>
-      <div class="footer-actions">
-        <button id="auto-start-btn" class="footer-btn" title="开机自启">🔌 自启</button>
-        <button id="font-btn" class="footer-btn" title="切换字体大小">A 字号:中</button>
-        <span class="footer-hint">右键任务 = 菜单 | 分区间拖动分隔线可调大小</span>
+<!doctype html>
+<html lang="zh-CN" data-theme="gold">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Todo · 桌面任务树</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <div class="brand">
+          <img class="brand-mark" src="logo.png" alt="" aria-hidden="true" />
+          <h1>Todo</h1>
+          <span class="version">1.7</span>
+        </div>
+        <div class="window-actions">
+          <button
+            id="undo-btn"
+            class="icon-button"
+            title="撤回（Ctrl+Z）"
+            aria-label="撤回"
+            disabled
+          >
+            ↶
+          </button>
+          <button
+            id="pin-btn"
+            class="icon-button"
+            title="切换桌面固定"
+            aria-label="固定到桌面"
+          >
+            ⌖
+          </button>
+          <details id="settings" class="settings">
+            <summary class="icon-button" aria-label="设置" title="设置">
+              ⋯
+            </summary>
+            <div class="settings-panel">
+              <p class="eyebrow">外观</p>
+              <div class="theme-options" role="group" aria-label="主题">
+                <button data-theme-choice="gold">
+                  <i class="swatch gold"></i>暗金
+                </button>
+                <button data-theme-choice="paper">
+                  <i class="swatch paper"></i>纸白
+                </button>
+                <button data-theme-choice="forest">
+                  <i class="swatch forest"></i>松绿
+                </button>
+              </div>
+              <label class="setting-row"
+                >背景不透明度<input
+                  id="opacity"
+                  type="range"
+                  min="65"
+                  max="100"
+                  step="5"
+                  aria-label="背景不透明度"
+              /></label>
+              <button id="font-btn" class="setting-row">字号：标准</button>
+              <button id="compact-btn" class="setting-row">紧凑视图：关</button>
+              <button id="auto-start-btn" class="setting-row">
+                开机自启：读取中
+              </button>
+              <hr />
+              <button id="open-file-btn" class="setting-row">
+                打开 Markdown 文件
+              </button>
+              <button id="refresh-btn" class="setting-row">同步外部修改</button>
+              <button id="backup-btn" class="setting-row">查看自动备份</button>
+              <div class="settings-inline">
+                <button id="expand-all">全部展开</button
+                ><button id="collapse-all">全部折叠</button>
+              </div>
+              <p class="settings-hint">
+                双击编辑 · 右键更多操作<br />Ctrl+N 新任务 · Ctrl+F 搜索
+              </p>
+            </div>
+          </details>
+          <button
+            id="close-btn"
+            class="icon-button close"
+            aria-label="退出 Todo"
+            title="退出"
+          >
+            ×
+          </button>
+        </div>
+      </header>
+      <section class="overview" aria-label="任务概览">
+        <div class="overview-top">
+          <span id="today" class="eyebrow"></span
+          ><span class="local-badge" id="storage-badge">本地 · Markdown</span>
+        </div>
+        <div class="overview-main">
+          <div>
+            <p class="greeting">想做的事，一件件完成。</p>
+            <p class="overview-caption" id="overview-caption">从一件小事开始</p>
+          </div>
+          <div class="progress-ring" id="progress-ring">
+            <strong id="progress-value">0<span>%</span></strong>
+          </div>
+        </div>
+        <div class="metrics">
+          <span>待办 <b id="pending-count">0</b></span
+          ><span>紧急 <b id="urgent-count">0</b></span
+          ><span>已完成 <b id="done-count">0</b></span>
+        </div>
+      </section>
+      <section class="composer" aria-label="添加任务">
+        <div class="compose-main">
+          <input
+            id="new-todo-input"
+            maxlength="500"
+            placeholder="TODO NEXT"
+            aria-label="新任务"
+          /><button id="add-btn" class="add-button" aria-label="添加任务">
+            ＋
+          </button>
+        </div>
+        <div class="compose-options">
+          <select id="zone-select" aria-label="任务分区">
+            <option value="todo">待完成</option>
+            <option value="goals">目标</option>
+            <option value="done">已完成</option>
+            <option value="abandoned">放弃</option></select
+          ><select id="parent-select" aria-label="父任务">
+            <option value="">独立任务</option></select
+          ><input
+            id="ddl-input"
+            type="date"
+            aria-label="截止日期"
+            title="截止日期"
+          />
+        </div>
+      </section>
+      <div class="filter-bar">
+        <div class="filters" role="group" aria-label="任务筛选">
+          <button data-filter="all" aria-pressed="true">全部</button
+          ><button data-filter="today" aria-pressed="false">到期</button
+          ><button data-filter="urgent" aria-pressed="false">紧急</button>
+        </div>
+        <label class="search-box"
+          ><span aria-hidden="true">⌕</span
+          ><input
+            id="search"
+            type="search"
+            placeholder="搜索任务"
+            aria-label="搜索任务"
+        /></label>
       </div>
-    </footer>
-  </div>
-  <script src="app.js"></script>
-</body>
+      <div id="notice" class="notice" role="status" hidden>
+        <span id="notice-text"></span>
+        <div>
+          <button id="retry-btn">重试</button
+          ><button id="copy-btn">保存副本</button
+          ><button id="load-btn">载入文件</button>
+        </div>
+      </div>
+      <div
+        id="zones-container"
+        class="zones-container"
+        aria-label="任务分区"
+      ></div>
+      <footer class="footer">
+        <span class="save-state" id="save-state" role="status">正在读取…</span
+        ><span id="stats">共 0 项</span
+        ><button id="file-path-bar" title="当前文件">未选择文件</button>
+      </footer>
+    </main>
+    <dialog id="task-dialog">
+      <form id="dialog-form">
+        <p class="eyebrow">TODO</p>
+        <h2 id="dialog-title"></h2>
+        <p id="dialog-description"></p>
+        <label id="dialog-text-label"
+          >任务名称<input
+            id="dialog-text"
+            maxlength="500"
+            autocomplete="off" /></label
+        ><label id="dialog-date-label"
+          >截止日期<input id="dialog-date" type="date"
+        /></label>
+        <div class="dialog-actions">
+          <button id="dialog-cancel" type="button">取消</button
+          ><button id="dialog-submit" class="primary" type="submit">
+            保存
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div id="context-menu" class="context-menu" role="menu" hidden></div>
+    <script src="task-model.js"></script>
+    <script src="preview.js"></script>
+    <script src="app.js"></script>
+  </body>
 </html>
