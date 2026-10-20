@@ -4,7 +4,7 @@
 
 # TodoTree
 
-**大事化小，琐事上桌。**
+**大事化小，琐事化了。**
 
 *Local-First Markdown Task Tree Pinned to Your Windows Desktop Layer*
 
