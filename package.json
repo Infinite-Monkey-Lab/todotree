@@ -1,7 +1,7 @@
 {
   "name": "todotree",
   "version": "1.7.0",
-  "description": "可切换主题的本地 Markdown 桌面任务树",
+  "description": "🌳 Windows 桌面任务树 · 基于原生 Markdown 的 Local-First 待办清单，支持 Win32 桌面层锚定、四分区无限子任务、DDL 提醒、三套主题与自动备份 — 无需注册、零云端同步。",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -47,9 +47,21 @@
     "koffi": "^3.2.1"
   },
   "author": "yunyancuo",
-  "homepage": "https://github.com/yunyancuo/todotree",
+  "homepage": "https://github.com/Infinite-Monkey-Lab/todotree",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yunyancuo/todotree.git"
-  }
+    "url": "https://github.com/Infinite-Monkey-Lab/todotree.git"
+  },
+  "keywords": [
+    "windows",
+    "desktop-widget",
+    "todo",
+    "todoapp",
+    "markdown",
+    "electron",
+    "task-management",
+    "productivity",
+    "todolist",
+    "local-first"
+  ]
 }
