@@ -4,7 +4,7 @@
 
 # TodoTree
 
-**把大目标拆成小事，焊在每天看得见的桌面上。**
+**大事化小，琐事上桌。**
 
 *Local-First Markdown Task Tree Pinned to Your Windows Desktop Layer*
 
