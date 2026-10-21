@@ -1,7 +1,7 @@
 {
   "name": "todotree",
   "version": "1.7.0",
-  "description": "🌳 Windows 桌面任务树 · 基于原生 Markdown 的 Local-First 待办清单，支持 Win32 桌面层锚定、四分区无限子任务、DDL 提醒、三套主题与自动备份 — 无需注册、零云端同步。",
+  "description": "Windows 桌面任务树工具：基于本地 Markdown 文件，支持 Win32 桌面层固定、四分区子任务管理、DDL 提醒、三套主题与 20 份滚动备份，无需注册、不传云端。",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
