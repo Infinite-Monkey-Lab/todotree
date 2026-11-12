@@ -6,7 +6,13 @@ const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
-async function boot(t, config = {}, failAttach = false, lock = true) {
+async function boot(
+  t,
+  config = {},
+  failAttach = false,
+  lock = true,
+  failLoadLayer = false,
+) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "todotree-main-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, "desktop"));
@@ -93,13 +99,16 @@ async function boot(t, config = {}, failAttach = false, lock = true) {
       name === "electron"
         ? electron
         : name === "./desktop-layer"
-          ? {
-              attach: () => {
-                if (failAttach) throw Error("unsupported");
-              },
-              detach: () => {},
-              ensureAttached: () => {},
-            }
+          ? (() => {
+              if (failLoadLayer) throw Error("Cannot find module 'koffi'");
+              return {
+                attach: () => {
+                  if (failAttach) throw Error("unsupported");
+                },
+                detach: () => {},
+                ensureAttached: () => {},
+              };
+            })()
           : name === "./lib/file-store"
             ? require("../lib/file-store")
             : require(name),
@@ -176,4 +185,12 @@ test("a second process never creates another window", async (t) => {
   const f = await boot(t, {}, false, false);
   assert.equal(f.app.quitCalled, true);
   assert.equal(f.window, undefined);
+});
+test("missing desktop-layer module degrades gracefully and second-instance never hits TDZ", async (t) => {
+  const f = await boot(t, {}, false, true, true);
+  assert.doesNotThrow(() => f.app.emit("second-instance"));
+  f.window.emit("ready-to-show");
+  assert.equal(f.window.focusable, true);
+  assert.equal(f.window.movable, true);
+  assert.equal(f.handlers.get("load-todo")().pinned, false);
 });

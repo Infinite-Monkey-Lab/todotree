@@ -38,8 +38,25 @@ let windowBounds = { x: undefined, y: undefined, width: 520, height: 740 };
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  let desktopLayer = {
+    attach: () => {
+      throw new Error("desktop-layer unavailable");
+    },
+    detach: () => {},
+    ensureAttached: () => "unattached",
+  };
+  try {
+    desktopLayer = require("./desktop-layer");
+  } catch (e) {
+    console.error("[desktop-layer] load failed:", e.message);
+  }
+  const fileStore = require("./lib/file-store");
+  const seed = demoMode
+    ? fs.readFileSync(path.join(__dirname, "examples", "demo.md"), "utf8")
+    : "# Todo\n\n## 目标\n\n## 待完成\n\n## 已完成\n\n## 放弃\n";
+
   app.on("second-instance", () => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       isPinned = false;
       transientEdit = false;
       applyPinState();
@@ -47,11 +64,6 @@ if (!app.requestSingleInstanceLock()) {
       mainWindow.focus();
     }
   });
-  const desktopLayer = require("./desktop-layer");
-  const fileStore = require("./lib/file-store");
-  const seed = demoMode
-    ? fs.readFileSync(path.join(__dirname, "examples", "demo.md"), "utf8")
-    : "# Todo\n\n## 目标\n\n## 待完成\n\n## 已完成\n\n## 放弃\n";
 
   function loadConfig() {
     try {
