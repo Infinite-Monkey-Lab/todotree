@@ -20,6 +20,20 @@ if (demoMode) {
   app.setPath("userData", demoData);
 }
 
+// 状态变量必须先于单实例锁声明：second-instance 事件可能在
+// requestSingleInstanceLock 同步执行期间投递（并发启动竞态），
+// 若声明在锁检查之后会触发 TDZ（Cannot access before initialization）
+let currentFilePath = path.join(app.getPath("desktop"), "TODOTREE.md");
+if (demoMode)
+  currentFilePath = path.join(app.getPath("userData"), "演示任务.md");
+let configPath = path.join(app.getPath("userData"), "config.json");
+let mainWindow;
+let isPinned = !demoMode;
+let expectQuit = false;
+let transientEdit = false;
+let recreateCount = 0;
+let windowBounds = { x: undefined, y: undefined, width: 520, height: 740 };
+
 // 单实例锁：重复启动时直接退出，避免两个窗口叠在桌面层
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -38,17 +52,6 @@ if (!app.requestSingleInstanceLock()) {
   const seed = demoMode
     ? fs.readFileSync(path.join(__dirname, "examples", "demo.md"), "utf8")
     : "# Todo\n\n## 目标\n\n## 待完成\n\n## 已完成\n\n## 放弃\n";
-
-  let currentFilePath = path.join(app.getPath("desktop"), "TODOTREE.md");
-  if (demoMode)
-    currentFilePath = path.join(app.getPath("userData"), "演示任务.md");
-  let configPath = path.join(app.getPath("userData"), "config.json");
-  let mainWindow;
-  let isPinned = !demoMode;
-  let expectQuit = false;
-  let transientEdit = false;
-  let recreateCount = 0;
-  let windowBounds = { x: undefined, y: undefined, width: 520, height: 740 };
 
   function loadConfig() {
     try {
