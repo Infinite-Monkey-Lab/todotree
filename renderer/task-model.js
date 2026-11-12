@@ -191,8 +191,21 @@
       }
     return lines.join("\n");
   }
+  function toChineseNum(n) {
+    if (!Number.isInteger(n) || n < 1) return "";
+    const digits = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+    if (n <= 10) return (n === 10 ? "十" : digits[n]) + "、";
+    if (n < 20) return "十" + digits[n % 10] + "、";
+    if (n < 100)
+      return digits[Math.floor(n / 10)] + "十" + digits[n % 10] + "、";
+    return n + "、";
+  }
   function settle(items, now = Date.now()) {
     let changed = false;
+    let minOrder = items.reduce(
+      (min, i) => (Number.isFinite(i.order) ? Math.min(min, i.order) : min),
+      0,
+    );
     for (const item of items) {
       if (
         !item.statusChangedAt ||
@@ -210,6 +223,10 @@
         item.zone = target;
         changed = true;
       }
+      if (item.status === "urgent") {
+        minOrder -= 1;
+        item.order = minOrder;
+      }
       item.statusChangedAt = null;
       changed = true;
     }
@@ -223,6 +240,7 @@
     descendants,
     localDate,
     validDate,
+    toChineseNum,
     settle,
   };
 });

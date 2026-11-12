@@ -127,3 +127,21 @@ test("non-object metadata stays literal and does not crash the importer", () => 
     );
   }
 });
+test("Chinese top-level numbering formats 1..99+ accurately and settle promotes urgent order", () => {
+  assert.equal(M.toChineseNum(1), "一、");
+  assert.equal(M.toChineseNum(10), "十、");
+  assert.equal(M.toChineseNum(11), "十一、");
+  assert.equal(M.toChineseNum(20), "二十、");
+  assert.equal(M.toChineseNum(25), "二十五、");
+  assert.equal(M.toChineseNum(100), "100、");
+
+  const doc = M.parse("## 待完成\n- [ ] first\n- [ ] second");
+  doc.items[1].status = "urgent";
+  doc.items[1].statusChangedAt = 1000;
+  // Before 60s buffer expires, order is untouched
+  assert.equal(M.settle(doc.items, 30000), false);
+  assert.ok(doc.items[1].order > doc.items[0].order);
+  // After 60s buffer expires, urgent item settles to top order
+  assert.equal(M.settle(doc.items, 61001), true);
+  assert.ok(doc.items[1].order < doc.items[0].order);
+});

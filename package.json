@@ -1,6 +1,6 @@
 {
   "name": "todotree",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Windows 桌面任务树工具：基于本地 Markdown 文件，支持 Win32 桌面层固定、四分区子任务管理、DDL 提醒、三套主题与 20 份滚动备份，无需注册、不传云端。",
   "main": "main.js",
   "scripts": {

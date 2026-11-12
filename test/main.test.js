@@ -39,6 +39,9 @@ async function boot(
     isDestroyed() {
       return false;
     }
+    setBounds(b) {
+      this.bounds = { ...b };
+    }
     getBounds() {
       return this.bounds;
     }
@@ -193,4 +196,12 @@ test("missing desktop-layer module degrades gracefully and second-instance never
   assert.equal(f.window.focusable, true);
   assert.equal(f.window.movable, true);
   assert.equal(f.handlers.get("load-todo")().pinned, false);
+});
+test("floating window snaps within 15px of screen workArea edges on move", async (t) => {
+  const f = await boot(t, { pinned: false, bounds: { x: 100, y: 100, width: 400, height: 600 } });
+  f.window.bounds = { x: 9, y: 472, width: 400, height: 600 }; // y + h = 1072, within 15px of 1080
+  f.window.emit("move");
+  f.timers.at(-1)();
+  assert.equal(f.window.getBounds().x, 0);
+  assert.equal(f.window.getBounds().y, 480);
 });

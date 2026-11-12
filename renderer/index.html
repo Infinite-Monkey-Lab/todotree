@@ -16,7 +16,7 @@
         <div class="brand">
           <img class="brand-mark" src="logo.png" alt="" aria-hidden="true" />
           <h1>Todo</h1>
-          <span class="version">1.7</span>
+          <span class="version">1.8</span>
         </div>
         <div class="window-actions">
           <button
@@ -29,27 +29,67 @@
             ↶
           </button>
           <button
+            id="quick-refresh-btn"
+            class="icon-button"
+            title="同步外部文件修改（F5）"
+            aria-label="同步外部修改"
+          >
+            ↻
+          </button>
+          <button
+            id="quick-open-btn"
+            class="icon-button"
+            title="打开/切换 Markdown 文件（Ctrl+O）"
+            aria-label="打开 Markdown 文件"
+          >
+            📂
+          </button>
+          <button
+            id="quick-collapse-btn"
+            class="icon-button icon-sm"
+            title="折叠全部任务"
+            aria-label="折叠全部任务"
+          >
+            ▶
+          </button>
+          <button
+            id="quick-expand-btn"
+            class="icon-button icon-sm"
+            title="展开全部分区与任务"
+            aria-label="展开全部"
+          >
+            ▼
+          </button>
+          <button
+            id="quick-font-btn"
+            class="icon-button icon-text"
+            title="切换字号（小 / 标准 / 大 / 特大）"
+            aria-label="切换字号"
+          >
+            A
+          </button>
+          <button
             id="pin-btn"
             class="icon-button"
             title="切换桌面固定"
             aria-label="固定到桌面"
           >
-            ⌖
+            📌
           </button>
           <details id="settings" class="settings">
-            <summary class="icon-button" aria-label="设置" title="设置">
+            <summary class="icon-button" aria-label="设置" title="外观与设置">
               ⋯
             </summary>
             <div class="settings-panel">
               <p class="eyebrow">外观</p>
               <div class="theme-options" role="group" aria-label="主题">
-                <button data-theme-choice="gold">
+                <button type="button" data-theme-choice="gold">
                   <i class="swatch gold"></i>暗金
                 </button>
-                <button data-theme-choice="paper">
+                <button type="button" data-theme-choice="paper">
                   <i class="swatch paper"></i>纸白
                 </button>
-                <button data-theme-choice="forest">
+                <button type="button" data-theme-choice="forest">
                   <i class="swatch forest"></i>松绿
                 </button>
               </div>
@@ -57,28 +97,37 @@
                 >背景不透明度<input
                   id="opacity"
                   type="range"
-                  min="65"
+                  min="55"
                   max="100"
                   step="5"
                   aria-label="背景不透明度"
               /></label>
-              <button id="font-btn" class="setting-row">字号：标准</button>
-              <button id="compact-btn" class="setting-row">紧凑视图：关</button>
-              <button id="auto-start-btn" class="setting-row">
+              <button type="button" id="font-btn" class="setting-row">
+                字号：标准
+              </button>
+              <button type="button" id="compact-btn" class="setting-row">
+                紧凑概览：关
+              </button>
+              <button type="button" id="auto-start-btn" class="setting-row">
                 开机自启：读取中
               </button>
               <hr />
-              <button id="open-file-btn" class="setting-row">
+              <button type="button" id="open-file-btn" class="setting-row">
                 打开 Markdown 文件
               </button>
-              <button id="refresh-btn" class="setting-row">同步外部修改</button>
-              <button id="backup-btn" class="setting-row">查看自动备份</button>
+              <button type="button" id="refresh-btn" class="setting-row">
+                同步外部修改
+              </button>
+              <button type="button" id="backup-btn" class="setting-row">
+                查看自动备份（最近20份）
+              </button>
               <div class="settings-inline">
-                <button id="expand-all">全部展开</button
-                ><button id="collapse-all">全部折叠</button>
+                <button type="button" id="expand-all">全部展开</button
+                ><button type="button" id="collapse-all">全部折叠</button>
               </div>
               <p class="settings-hint">
-                双击编辑 · 右键更多操作<br />Ctrl+N 新任务 · Ctrl+F 搜索
+                双击任务编辑 · 右键更多操作 · 拖动分隔线调分区大小<br />Ctrl+N
+                新任务 · Ctrl+F 搜索 · Ctrl+Z 撤回
               </p>
             </div>
           </details>
@@ -94,22 +143,37 @@
       </header>
       <section class="overview" aria-label="任务概览">
         <div class="overview-top">
-          <span id="today" class="eyebrow"></span
-          ><span class="local-badge" id="storage-badge">本地 · Markdown</span>
+          <span id="today" class="eyebrow"></span>
+          <div class="overview-top-right">
+            <span class="local-badge" id="storage-badge">本地 · Markdown</span>
+            <button
+              type="button"
+              id="overview-toggle-btn"
+              class="overview-toggle-btn"
+              title="收起/展开概览卡片"
+            >
+              ▴
+            </button>
+          </div>
         </div>
         <div class="overview-main">
           <div>
-            <p class="greeting">想做的事，一件件完成。</p>
+            <p class="greeting">大事化小，琐事化了。</p>
             <p class="overview-caption" id="overview-caption">从一件小事开始</p>
           </div>
           <div class="progress-ring" id="progress-ring">
             <strong id="progress-value">0<span>%</span></strong>
           </div>
         </div>
-        <div class="metrics">
-          <span>待办 <b id="pending-count">0</b></span
-          ><span>紧急 <b id="urgent-count">0</b></span
-          ><span>已完成 <b id="done-count">0</b></span>
+        <div class="metrics-bar">
+          <div class="metrics">
+            <span>待办 <b id="pending-count">0</b></span
+            ><span>紧急 <b id="urgent-count">0</b></span
+            ><span>已完成 <b id="done-count">0</b></span>
+          </div>
+          <div class="slim-progress" id="slim-progress" aria-hidden="true">
+            <div class="slim-progress-fill" id="slim-progress-fill"></div>
+          </div>
         </div>
       </section>
       <section class="composer" aria-label="添加任务">
@@ -117,7 +181,7 @@
           <input
             id="new-todo-input"
             maxlength="500"
-            placeholder="TODO NEXT"
+            placeholder="添加任务…（Enter 保存）"
             aria-label="新任务"
           /><button id="add-btn" class="add-button" aria-label="添加任务">
             ＋
@@ -130,7 +194,7 @@
             <option value="done">已完成</option>
             <option value="abandoned">放弃</option></select
           ><select id="parent-select" aria-label="父任务">
-            <option value="">独立任务</option></select
+            <option value="">-- 根 --</option></select
           ><input
             id="ddl-input"
             type="date"
@@ -141,9 +205,13 @@
       </section>
       <div class="filter-bar">
         <div class="filters" role="group" aria-label="任务筛选">
-          <button data-filter="all" aria-pressed="true">全部</button
-          ><button data-filter="today" aria-pressed="false">到期</button
-          ><button data-filter="urgent" aria-pressed="false">紧急</button>
+          <button type="button" data-filter="all" aria-pressed="true">
+            全部</button
+          ><button type="button" data-filter="today" aria-pressed="false">
+            到期</button
+          ><button type="button" data-filter="urgent" aria-pressed="false">
+            紧急
+          </button>
         </div>
         <label class="search-box"
           ><span aria-hidden="true">⌕</span
@@ -157,9 +225,9 @@
       <div id="notice" class="notice" role="status" hidden>
         <span id="notice-text"></span>
         <div>
-          <button id="retry-btn">重试</button
-          ><button id="copy-btn">保存副本</button
-          ><button id="load-btn">载入文件</button>
+          <button type="button" id="retry-btn">重试</button
+          ><button type="button" id="copy-btn">保存副本</button
+          ><button type="button" id="load-btn">载入文件</button>
         </div>
       </div>
       <div
@@ -169,8 +237,28 @@
       ></div>
       <footer class="footer">
         <span class="save-state" id="save-state" role="status">正在读取…</span
-        ><span id="stats">共 0 项</span
-        ><button id="file-path-bar" title="当前文件">未选择文件</button>
+        ><span id="stats">共 0 项</span>
+        <div class="footer-actions">
+          <button
+            type="button"
+            id="footer-autostart-btn"
+            class="footer-chip"
+            title="切换开机自启"
+          >
+            🔌 自启
+          </button>
+          <button
+            type="button"
+            id="footer-backup-btn"
+            class="footer-chip"
+            title="打开自动备份目录"
+          >
+            🕘 备份
+          </button>
+        </div>
+        <button type="button" id="file-path-bar" title="点击切换任务文件">
+          未选择文件
+        </button>
       </footer>
     </main>
     <dialog id="task-dialog">

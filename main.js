@@ -151,11 +151,11 @@ if (!app.requestSingleInstanceLock()) {
         ? screen.getDisplayMatching(windowBounds).workArea
         : screen.getPrimaryDisplay().workArea;
       windowBounds.width = Math.min(
-        Math.max(380, windowBounds.width),
+        Math.max(320, windowBounds.width),
         area.width,
       );
       windowBounds.height = Math.min(
-        Math.max(500, windowBounds.height),
+        Math.max(400, windowBounds.height),
         area.height,
       );
       if (hasPosition)
@@ -174,8 +174,8 @@ if (!app.requestSingleInstanceLock()) {
       y: windowBounds.y,
       width: windowBounds.width,
       height: windowBounds.height,
-      minWidth: 380,
-      minHeight: 500,
+      minWidth: 320,
+      minHeight: 400,
       resizable: true,
       frame: false,
       transparent: true,
@@ -211,14 +211,38 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     let saveBoundsTimer = null;
+    let snapping = false;
     const onBoundsChange = () => {
+      if (snapping) return;
       if (saveBoundsTimer) clearTimeout(saveBoundsTimer);
       saveBoundsTimer = setTimeout(() => {
         if (!mainWindow || mainWindow.isDestroyed()) return;
-        const b = mainWindow.getBounds();
+        let b = mainWindow.getBounds();
+        // 浮动解锁模式下拖近屏幕工作区边缘（15px 内）自动磁吸对齐
+        if (!isPinned && typeof mainWindow.setBounds === "function") {
+          const area = screen.getDisplayMatching(b).workArea;
+          const SNAP = 15;
+          let nx = b.x;
+          let ny = b.y;
+          if (Math.abs(b.x - area.x) <= SNAP) nx = area.x;
+          else if (Math.abs(b.x + b.width - (area.x + area.width)) <= SNAP)
+            nx = area.x + area.width - b.width;
+          if (Math.abs(b.y - area.y) <= SNAP) ny = area.y;
+          else if (Math.abs(b.y + b.height - (area.y + area.height)) <= SNAP)
+            ny = area.y + area.height - b.height;
+          if (nx !== b.x || ny !== b.y) {
+            snapping = true;
+            try {
+              b = { x: nx, y: ny, width: b.width, height: b.height };
+              mainWindow.setBounds(b);
+            } finally {
+              snapping = false;
+            }
+          }
+        }
         windowBounds = { x: b.x, y: b.y, width: b.width, height: b.height };
         saveConfig();
-      }, 500);
+      }, 300);
     };
     mainWindow.on("resize", onBoundsChange);
     mainWindow.on("move", onBoundsChange);
